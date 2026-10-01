@@ -78,7 +78,7 @@ function pdfParts(docs: DocInput[]): Part[] {
 }
 
 /** Teilt Dokumente in Gruppen, die jeweils in einen Request passen (Klausuren zuletzt, damit Themen schon bekannt sind). */
-export function batchDocuments(docs: DocInput[], maxBytes: number): DocInput[][] {
+export function batchDocuments(docs: DocInput[], maxBytes: number, targetBytes = maxBytes): DocInput[][] {
   const order = { slides: 0, other: 1, exam: 2 } as const;
   const sorted = [...docs].sort((a, b) => order[a.kind] - order[b.kind]);
   const batches: DocInput[][] = [];
@@ -91,7 +91,7 @@ export function batchDocuments(docs: DocInput[], maxBytes: number): DocInput[][]
         `„${d.name}“ ist mit ${(d.bytes / 1024 / 1024).toFixed(1)} MB zu groß (max. ${(maxBytes / 1024 / 1024).toFixed(0)} MB pro Datei). Bitte die PDF aufteilen oder komprimieren.`,
       );
     }
-    if (size + d.bytes > maxBytes && cur.length) {
+    if (size + d.bytes > targetBytes && cur.length) {
       batches.push(cur);
       cur = [];
       size = 0;
@@ -125,7 +125,7 @@ export async function analyzeDocuments(
   existing: TopicData[],
   opts: CallOptions = {},
 ): Promise<Analysis> {
-  const batches = batchDocuments(docs, backend.maxInlineBytes);
+  const batches = batchDocuments(docs, backend.maxInlineBytes, backend.batchBytes);
   let topics = existing;
   let result: Analysis | undefined;
   for (let i = 0; i < batches.length; i++) {
@@ -144,8 +144,9 @@ export async function analyzeDocuments(
     try {
       res = await structured(backend, AnalysisSchema, req, "analyze", opts);
     } catch (e) {
-      // Interner Google-Fehler oder zu groß bei mehreren Dateien: Datei für Datei erneut versuchen.
-      if (!(e instanceof AIError) || !["server", "too_large"].includes(e.kind) || batch.length < 2) throw e;
+      // Interner Google-Fehler, zu groß oder Verbindungsabbruch (zu lange Antwortzeit) bei mehreren Dateien:
+      // Datei für Datei erneut versuchen.
+      if (!(e instanceof AIError) || !["server", "too_large", "network"].includes(e.kind) || batch.length < 2 || opts.signal?.aborted) throw e;
       for (const single of batch) {
         opts.onProgress?.({ step: `Analysiere einzeln: ${single.name} …` });
         const r = await structured(
@@ -186,28 +187,39 @@ export async function generateItems(
   docs: DocInput[],
   opts: CallOptions = {},
 ): Promise<GeneratedItem[]> {
-  const context = pickContextDocuments(docs, backend.maxInlineBytes);
+  const context = pickContextDocuments(docs, backend.batchBytes ?? backend.maxInlineBytes);
   const all: GeneratedItem[] = [];
-  // Höchstens ~24 Aufgaben pro Request, damit die Antwort nicht abgeschnitten wird.
+  // Höchstens ~24 Aufgaben pro Request, damit die Antwort nicht abgeschnitten wird (Gemini: weniger, wegen Antwortzeit).
+  const perRequest = backend.maxItemsPerRequest ?? 24;
   const chunks: GenerateTopicSpec[][] = [];
   let cur: GenerateTopicSpec[] = [];
   let n = 0;
   for (const s of specs) {
-    if (n + s.count > 24 && cur.length) {
-      chunks.push(cur);
-      cur = [];
-      n = 0;
+    // Große Themen-Anfragen aufteilen, damit kein einzelner Request zu groß wird.
+    for (let left = s.count; left > 0; ) {
+      const take = Math.min(left, perRequest);
+      if (n + take > perRequest && cur.length) {
+        chunks.push(cur);
+        cur = [];
+        n = 0;
+      }
+      cur.push({ ...s, count: take });
+      n += take;
+      left -= take;
     }
-    cur.push(s);
-    n += s.count;
   }
   if (cur.length) chunks.push(cur);
 
   for (let i = 0; i < chunks.length; i++) {
+    // Schon erzeugte Aufgaben desselben Themas (aus früheren Teilen) nicht wiederholen.
+    const specsI = chunks[i].map((sp) => ({
+      ...sp,
+      existingPrompts: [...all.filter((it) => it.topicName === sp.topic.name).map((it) => it.prompt), ...sp.existingPrompts],
+    }));
     opts.onProgress?.({ step: chunks.length > 1 ? `Erzeuge Aufgaben (Teil ${i + 1}/${chunks.length}) …` : "Erzeuge Aufgaben …" });
     const req: CompleteRequest = {
       system: GENERATE_SYSTEM,
-      parts: [...(context.length ? pdfParts(context) : [NO_DOCS_NOTE]), { type: "text", text: generateUserText(courseName, chunks[i], mix) }],
+      parts: [...(context.length ? pdfParts(context) : [NO_DOCS_NOTE]), { type: "text", text: generateUserText(courseName, specsI, mix) }],
       schema: GENERATION_JSON,
       effort: "medium",
       maxTokens: 48000,
@@ -230,7 +242,7 @@ export async function generateVariations(
   docs: DocInput[],
   opts: CallOptions = {},
 ): Promise<GeneratedItem[]> {
-  const context = pickContextDocuments(docs, backend.maxInlineBytes);
+  const context = pickContextDocuments(docs, backend.batchBytes ?? backend.maxInlineBytes);
   opts.onProgress?.({ step: "Erzeuge neue Übungsaufgaben zu deinen Schwächen …" });
   const req: CompleteRequest = {
     system: GENERATE_SYSTEM,

@@ -48,6 +48,10 @@ function sleepFor(ms: number, signal?: AbortSignal): Promise<void> {
 export class GeminiBackend implements LLMBackend {
   readonly provider = "gemini" as const;
   readonly maxInlineBytes = INLINE_LIMIT;
+  // Gemini antwortet erst, wenn alles fertig ist. Live gemessen (8 PDFs, 1,7 MB): erstes Byte nach 113 s.
+  // Kleine Requests bleiben unter Safaris ca. 60 s Wartezeit.
+  readonly batchBytes = 1024 * 1024;
+  readonly maxItemsPerRequest = 8;
   private ai: GenerateClient;
   private fallbacks: string[];
   private delays: number[];
@@ -64,7 +68,7 @@ export class GeminiBackend implements LLMBackend {
     // Wiederholversuche steuern wir selbst (sichtbar im Fortschritt, mit Ausweichmodell).
     this.ai = opts.client ?? new GoogleGenAI({ apiKey, httpOptions: { retryOptions: { attempts: 1 } } });
     this.fallbacks = [...new Set(opts.fallbackModels ?? [])].filter((m) => m !== model);
-    this.delays = opts.retryDelaysMs ?? [3_000, 10_000, 20_000];
+    this.delays = opts.retryDelaysMs ?? [5_000, 15_000];
     this.sleep = opts.sleep ?? sleepFor;
     this.now = opts.now ?? Date.now;
   }
@@ -199,6 +203,8 @@ export function mapGeminiError(e: unknown): unknown {
       return new AIError("auth", "Der Gemini-API-Key ist ungültig.", undefined, detail);
     if (e.status === 401 || e.status === 403) return new AIError("auth", "Der Gemini-API-Key ist ungültig oder hat keine Berechtigung.", undefined, detail);
     if (e.status === 429) {
+      if (/PerDay/i.test(msg))
+        return new AIError("rate_limit", "Tageslimit der kostenlosen Gemini-Stufe für dieses Modell erreicht. Morgen geht es wieder – oder in den Einstellungen ein anderes Modell wählen.", undefined, detail);
       const m = msg.match(/retry in ([\d.]+)s/i) ?? msg.match(/"retryDelay":\s*"(\d+)s"/);
       const secs = m ? Math.ceil(Number(m[1])) : undefined;
       return new AIError(
@@ -218,7 +224,12 @@ export function mapGeminiError(e: unknown): unknown {
       return new AIError("server", "Bei Google ist ein interner Fehler aufgetreten. Das passiert oft bei sehr großen PDFs – versuche es mit weniger oder kleineren Dateien.", undefined, detail);
     return new AIError("other", `Gemini-Fehler ${e.status}: ${googleMessage(e)}`, undefined, detail);
   }
-  if (e instanceof TypeError && /fetch|network|load failed/i.test(e.message)) return new AIError("network", "Keine Verbindung zu Gemini. Bist du online?", undefined, e.message);
+  if (e instanceof TypeError && /fetch|network|load failed/i.test(e.message)) return new AIError(
+      "network",
+      "Die Verbindung zu Gemini ist abgebrochen. Entweder bist du offline, die App war zwischendurch im Hintergrund, oder Gemini hat zu lange (über ca. 60 s) nicht geantwortet.",
+      undefined,
+      e.message,
+    );
   return e;
 }
 

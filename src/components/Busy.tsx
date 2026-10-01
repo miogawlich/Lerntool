@@ -17,6 +17,18 @@ interface BusyApi {
 
 const Ctx = createContext<BusyApi | null>(null);
 
+type WakeLockLike = { release(): Promise<void> };
+
+/** Hält den Bildschirm wach, solange die KI arbeitet – sonst bricht iOS die Verbindung beim Sperren ab. */
+async function keepAwake(): Promise<WakeLockLike | undefined> {
+  try {
+    const wl = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<WakeLockLike> } }).wakeLock;
+    return await wl?.request("screen");
+  } catch {
+    return undefined;
+  }
+}
+
 export function errorMessage(e: unknown): string {
   if (e instanceof AIError) return e.message;
   if (e instanceof DOMException && e.name === "AbortError") return "Abgebrochen.";
@@ -39,6 +51,7 @@ export function BusyProvider({ children }: { children: ReactNode }) {
     setError(null);
     setErrorDetail(null);
     setState({ step: label });
+    const lock = keepAwake();
     try {
       return await fn({ signal: c.signal, progress: (step, chars) => setState({ step, chars }) });
     } catch (e) {
@@ -47,6 +60,7 @@ export function BusyProvider({ children }: { children: ReactNode }) {
       setErrorDetail(e instanceof AIError && e.detail ? e.detail : null);
       return undefined;
     } finally {
+      void lock.then((l) => l?.release().catch(() => undefined));
       setState(null);
       ctrl.current = null;
     }

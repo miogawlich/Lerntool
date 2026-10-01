@@ -37,6 +37,13 @@ export interface LLMBackend {
   readonly model: string;
   /** Größte Summe an PDF-Rohdaten (Bytes), die in einen Request passt. */
   readonly maxInlineBytes: number;
+  /**
+   * Ziel-Größe pro Request (Bytes PDF). Kleinere Requests antworten schneller: Safari auf dem iPad
+   * bricht Anfragen ab, die ca. 60 s lang keine Daten liefern („Load failed“).
+   */
+  readonly batchBytes?: number;
+  /** Höchstzahl Aufgaben pro Request (aus demselben Grund). */
+  readonly maxItemsPerRequest?: number;
   complete(req: CompleteRequest): Promise<CompleteResponse>;
 }
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ApiError } from "@google/genai";
 import { GeminiBackend, mapGeminiError, pickDefaultGeminiModel, pickFallbackModels, resetGeminiState } from "../src/lib/ai/gemini";
 import { AIError, type CompleteRequest } from "../src/lib/ai/types";
-import { analyzeDocuments } from "../src/lib/ai/service";
+import { analyzeDocuments, generateItems } from "../src/lib/ai/service";
 import { FakeBackend, sampleAnalysis } from "./helpers";
 
 const apiErr = (status: number, message: string) => new ApiError({ status, message });
@@ -44,7 +44,7 @@ describe("Gemini: Wiederholversuche & Ausweichmodell", () => {
     const res = await be.complete(req(status));
     expect(res.text).toBe('{"ok":true}');
     expect(client.calls).toEqual(["gemini-3.0-flash", "gemini-3.0-flash", "gemini-3.0-flash"]);
-    expect(status[0]).toMatch(/neuer Versuch in 3 s/);
+    expect(status[0]).toMatch(/neuer Versuch in 5 s/);
   });
 
   it("weicht bei 503 sofort auf das nächste Modell aus, statt am selben zu warten", async () => {
@@ -65,7 +65,7 @@ describe("Gemini: Wiederholversuche & Ausweichmodell", () => {
     const res = await be.complete(req());
     expect(client.calls).toEqual(["m1", "m2", "m3", "m1"]);
     expect(res.model).toBe("m1");
-    expect(waits).toEqual([3000]);
+    expect(waits).toEqual([5000]);
   });
 
   it("merkt sich ein funktionierendes Ausweichmodell für die nächsten Aufrufe", async () => {
@@ -108,9 +108,9 @@ describe("Gemini: Wiederholversuche & Ausweichmodell", () => {
   });
 
   it("gibt nach allen Runden mit Überlastung auf", async () => {
-    const client = fakeClient(Array.from({ length: 8 }, () => apiErr(503, "overloaded")));
+    const client = fakeClient(Array.from({ length: 6 }, () => apiErr(503, "overloaded")));
     await expect(new GeminiBackend("k", "m1", { client, sleep: noSleep, fallbackModels: ["m2"] }).complete(req())).rejects.toMatchObject({ kind: "overloaded" });
-    expect(client.calls).toHaveLength(8);
+    expect(client.calls).toHaveLength(6);
   });
 
   it("nicht wiederholbare Fehler (z. B. Key ungültig) sofort melden", async () => {
@@ -118,6 +118,20 @@ describe("Gemini: Wiederholversuche & Ausweichmodell", () => {
     const be = new GeminiBackend("k", "m", { client, sleep: noSleep, fallbackModels: ["x"] });
     await expect(be.complete(req())).rejects.toMatchObject({ kind: "auth" });
     expect(client.calls).toHaveLength(1);
+  });
+
+  it("Tageslimit wird als solches gemeldet (nicht „30 s warten“)", () => {
+    const e = mapGeminiError(apiErr(429, 'Quota exceeded ... limit: 20, model: gemini-3.5-flash\nPlease retry in 32.5s. "quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"')) as AIError;
+    expect(e.kind).toBe("rate_limit");
+    expect(e.message).toMatch(/Tageslimit/);
+    expect(e.retryAfterSeconds).toBeUndefined();
+  });
+
+  it("Safaris „Load failed“ wird als Verbindungsabbruch mit Erklärung gemeldet", () => {
+    const e = mapGeminiError(new TypeError("Load failed")) as AIError;
+    expect(e.kind).toBe("network");
+    expect(e.message).toMatch(/60 s/);
+    expect(e.detail).toBe("Load failed");
   });
 
   it("unterscheidet 503 (überlastet) von 500 (interner Fehler) und behält Googles Text", () => {
@@ -163,5 +177,49 @@ describe("Analyse bei internem Google-Fehler", () => {
     const res = await analyzeDocuments(be, "K", docs, []);
     expect(res.topics.length).toBe(2);
     expect(be.requests.map((r) => r.parts.filter((p) => p.type === "pdf").length)).toEqual([1, 1]);
+  });
+});
+
+describe("Kleine Requests für Gemini (Safari-Zeitlimit)", () => {
+  const doc = (name: string, kb: number, kind: "slides" | "exam" = "slides") => ({ name, kind, bytes: kb * 1024, base64: "A" });
+
+  it("Analyse: 8 PDFs à 400 kB werden auf mehrere Requests verteilt", async () => {
+    const docs = Array.from({ length: 8 }, (_, i) => doc(`f${i}.pdf`, 400));
+    const be = Object.assign(new FakeBackend(Array.from({ length: 8 }, () => JSON.stringify(sampleAnalysis)), 14_000_000), { batchBytes: 1024 * 1024 });
+    await analyzeDocuments(be, "K", docs, []);
+    expect(be.requests.map((r) => r.parts.filter((p) => p.type === "pdf").length)).toEqual([2, 2, 2, 2]);
+  });
+
+  it("Analyse: Verbindungsabbruch bei mehreren Dateien → Datei für Datei", async () => {
+    const be = new FakeBackend([JSON.stringify(sampleAnalysis), JSON.stringify(sampleAnalysis)]);
+    const orig = be.complete.bind(be);
+    let first = true;
+    be.complete = async (r) => {
+      if (first) {
+        first = false;
+        throw new AIError("network", "abgebrochen", undefined, "Load failed");
+      }
+      return orig(r);
+    };
+    await analyzeDocuments(be, "K", [doc("a.pdf", 1), doc("b.pdf", 1)], []);
+    expect(be.requests.map((r) => r.parts.filter((p) => p.type === "pdf").length)).toEqual([1, 1]);
+  });
+
+  it("Erstellen: höchstens maxItemsPerRequest Aufgaben pro Request, ohne Wiederholungen zwischen den Teilen", async () => {
+    const topic = { ...sampleAnalysis.topics[0], examRelevance: "hoch" as const };
+    const item = (p: string) => ({ topicName: topic.name, type: "flashcard", difficulty: 1, prompt: p, answer: "a", options: [], rubric: [] });
+    const be = Object.assign(
+      new FakeBackend([JSON.stringify({ items: [item("Frage A")] }), JSON.stringify({ items: [item("Frage B")] })]),
+      { maxItemsPerRequest: 8, batchBytes: 1024 * 1024 },
+    );
+    const docs = [doc("klausur.pdf", 700, "exam"), doc("folien.pdf", 700)];
+    const mix = { flashcard: 100, multiple_choice: 0, short_answer: 0, worked_problem: 0 };
+    const out = await generateItems(be, "K", [{ topic, count: 12, existingPrompts: [] }], mix, docs);
+    expect(out).toHaveLength(2);
+    expect(be.requests).toHaveLength(2);
+    const text = (i: number) => (be.requests[i].parts.at(-1) as { text: string }).text;
+    expect(text(1)).toContain("Frage A");
+    // Nur so viel PDF-Kontext wie in die Ziel-Größe passt, Klausur bevorzugt
+    expect(be.requests[0].parts.filter((p) => p.type === "pdf").map((p) => (p as { name: string }).name)).toEqual(["klausur.pdf"]);
   });
 });
