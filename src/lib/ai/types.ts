@@ -40,6 +40,7 @@ export interface LLMBackend {
 
 export type AIErrorKind =
   | "no_key"
+  | "budget"
   | "auth"
   | "rate_limit"
   | "overloaded"

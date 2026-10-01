@@ -5,11 +5,30 @@ import { ErrorBanner, useBusy } from "../components/Busy";
 import { Difficulty, MasteryBar, RelevanceBadge, formatBytes } from "../components/Bits";
 import { MathText } from "../components/MathText";
 import { addDocuments, analyzeCourse, generateForTopics, generateWeaknessVariations } from "../lib/actions";
-import { defaultCallOptions, getBackend } from "../lib/ai";
+import { claudeCostThisMonth, defaultCallOptions, getBackend, includePdfsForCreate } from "../lib/ai";
+import { estimateClaudeCost, formatUsd } from "../lib/ai/estimate";
 import { db, deleteCourse, type Course, type DocKind, type Item, type Topic } from "../lib/db";
 import { ERROR_TYPE_LABELS, ITEM_TYPE_LABELS, ITEM_TYPES, normalizeMix, type ErrorType, type FormatMix } from "../lib/schemas";
 import { computeMastery, errorTypeStats, weakestTopics, type TopicMastery } from "../lib/scheduler";
-import { hasActiveKey, useSettings } from "../lib/settings";
+import { getSettings, hasActiveKey, useSettings } from "../lib/settings";
+
+/**
+ * Fragt vor teuren Claude-Aktionen mit grober Kostenschätzung nach. Bei Gemini (kostenlos) wird nicht gefragt.
+ * Gibt false zurück, wenn abgebrochen wurde.
+ */
+async function confirmClaudeCost(what: string, pages: number, outputTokens: number, requests = 1): Promise<boolean> {
+  const s = getSettings();
+  if (s.createProvider !== "claude") return true;
+  const one = estimateClaudeCost(s.claudeModel, pages, outputTokens / requests);
+  const usd = one.usd * requests;
+  const spent = await claudeCostThisMonth();
+  const budget = s.claudeMonthlyBudget > 0 ? ` von ${formatUsd(s.claudeMonthlyBudget)} Budget` : "";
+  return confirm(
+    `${what} mit Claude kostet grob ${formatUsd(usd)}` +
+      (pages ? ` (ca. ${pages} PDF-Seiten${requests > 1 ? `, ${requests} Anfragen` : ""})` : " (ohne PDFs, Sparmodus)") +
+      `.\nDiesen Monat bisher: ${formatUsd(spent)}${budget}.\n\nFortfahren?`,
+  );
+}
 
 type Tab = "overview" | "material" | "topics" | "items";
 const TABS: [Tab, string][] = [
@@ -74,7 +93,7 @@ function Overview({ course, topics, items, attempts, mastery, docsCount }: { cou
       <div className="card stack">
         <h2>Los geht's</h2>
         <p>1. Lade unter <b>Material</b> Vorlesungsfolien und Altklausuren als PDF hoch.<br />2. Lass die KI das Material analysieren – sie erkennt Themen und schlägt passende Aufgabenformate vor.<br />3. Erzeuge unter <b>Themen</b> Aufgaben und fang an zu lernen.</p>
-        {!hasActiveKey(settings) && <p className="notice warn">Vorher in den <Link to="/settings">Einstellungen</Link> einen KI-Anbieter einrichten.</p>}
+        {!hasActiveKey(settings) && <p className="notice warn">Vorher in den <Link to="/settings">Einstellungen</Link> die KI fürs Erstellen einrichten.</p>}
       </div>
     );
 
@@ -146,7 +165,7 @@ function DangerZone({ course }: { course: Course }) {
   );
 }
 
-function Material({ course, docs }: { course: Course; docs: { id: string; name: string; kind: DocKind; bytes: number; analyzedAt?: number }[] }) {
+function Material({ course, docs }: { course: Course; docs: { id: string; name: string; kind: DocKind; bytes: number; pages?: number; analyzedAt?: number }[] }) {
   const busy = useBusy();
   const settings = useSettings();
   const [kind, setKind] = useState<DocKind>("slides");
@@ -162,11 +181,15 @@ function Material({ course, docs }: { course: Course; docs: { id: string; name: 
     setInfo(`${pdfs.length} Datei(en) hinzugefügt. Jetzt „Analysieren“ tippen.`);
   };
 
-  const analyze = (all = false) =>
-    busy.run("Analysiere Material …", async ({ signal, progress }) => {
-      const res = await analyzeCourse(await getBackend(), course.id, { ...defaultCallOptions({ signal, onProgress: (p) => progress(p.step, p.receivedChars) }), all });
+  const analyze = async (all = false) => {
+    const targets = all ? docs : pending;
+    const pages = targets.reduce((a, d) => a + (d.pages ?? Math.max(1, Math.round(d.bytes / 60_000))), 0);
+    if (!(await confirmClaudeCost("Die Analyse", pages, 10_000))) return;
+    await busy.run("Analysiere Material …", async ({ signal, progress }) => {
+      const res = await analyzeCourse(await getBackend("create"), course.id, { ...defaultCallOptions({ signal, onProgress: (p) => progress(p.step, p.receivedChars) }), all });
       setInfo(`Analyse fertig: ${res.added} neue Themen, ${res.updated} aktualisiert.`);
     });
+  };
 
   const KIND_LABEL: Record<DocKind, string> = { slides: "Folien", exam: "Altklausur", other: "Sonstiges" };
 
@@ -210,7 +233,7 @@ function Material({ course, docs }: { course: Course; docs: { id: string; name: 
             <button disabled={!docs.length || !hasActiveKey(settings)} onClick={() => analyze(true)}>Alles neu analysieren</button>
           </div>
         </div>
-        {!hasActiveKey(settings) && <p className="notice warn">Für die Analyse zuerst in den <Link to="/settings">Einstellungen</Link> einen KI-Anbieter einrichten.</p>}
+        {!hasActiveKey(settings) && <p className="notice warn">Für die Analyse zuerst in den <Link to="/settings">Einstellungen</Link> die KI fürs Erstellen einrichten.</p>}
         <ul className="list">
           {docs.map((d) => (
             <li key={d.id} className="spread">
@@ -262,19 +285,37 @@ function Topics({ course, topics, items, mastery }: { course: Course; topics: To
   }, [items]);
   const ready = hasActiveKey(settings);
 
-  const generate = (ids: string[]) =>
-    busy.run("Erzeuge Aufgaben …", async ({ signal, progress }) => {
+  const pdfPages = async () => {
+    if (!includePdfsForCreate()) return 0;
+    const docs = await db.documents.where("courseId").equals(course.id).toArray();
+    return docs.reduce((a, d) => a + (d.pages ?? Math.max(1, Math.round(d.bytes / 60_000))), 0);
+  };
+
+  const generate = async (ids: string[]) => {
+    const total = ids.length * count;
+    const requests = Math.max(1, Math.ceil(total / 24));
+    if (!(await confirmClaudeCost(`${total} Aufgaben erzeugen`, await pdfPages(), total * 500 + 4_000 * requests, requests))) return;
+    await busy.run("Erzeuge Aufgaben …", async ({ signal, progress }) => {
       const mix = normalizeMix(course.mix ?? { flashcard: 25, multiple_choice: 25, short_answer: 25, worked_problem: 25 });
-      const n = await generateForTopics(await getBackend(), course.id, ids, count, mix, defaultCallOptions({ signal, onProgress: (p) => progress(p.step, p.receivedChars) }));
+      const n = await generateForTopics(await getBackend("create"), course.id, ids, count, mix, {
+        ...defaultCallOptions({ signal, onProgress: (p) => progress(p.step, p.receivedChars) }),
+        includeDocs: includePdfsForCreate(),
+      });
       setMsg(`${n} neue Aufgaben erzeugt.`);
       setSel(new Set());
     });
+  };
 
-  const variations = (t: Topic) =>
-    busy.run("Erzeuge Übungsaufgaben zu deinen Schwächen …", async ({ signal, progress }) => {
-      const n = await generateWeaknessVariations(await getBackend(), course.id, t.id, 4, defaultCallOptions({ signal, onProgress: (p) => progress(p.step, p.receivedChars) }));
+  const variations = async (t: Topic) => {
+    if (!(await confirmClaudeCost("4 Schwächen-Aufgaben erzeugen", await pdfPages(), 6_000))) return;
+    await busy.run("Erzeuge Übungsaufgaben zu deinen Schwächen …", async ({ signal, progress }) => {
+      const n = await generateWeaknessVariations(await getBackend("create"), course.id, t.id, 4, {
+        ...defaultCallOptions({ signal, onProgress: (p) => progress(p.step, p.receivedChars) }),
+        includeDocs: includePdfsForCreate(),
+      });
       setMsg(`${n} neue Aufgaben zu „${t.name}“ erzeugt.`);
     });
+  };
 
   if (!topics.length) return <p className="notice">Noch keine Themen. Lade unter <b>Material</b> PDFs hoch und analysiere sie.</p>;
 

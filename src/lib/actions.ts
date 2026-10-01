@@ -1,4 +1,5 @@
 import type { Grade } from "ts-fsrs";
+import { estimatePdfPages } from "./ai/estimate";
 import { analyzeDocuments, generateItems, generateVariations, type CallOptions, type DocInput } from "./ai/service";
 import type { LLMBackend } from "./ai/types";
 import { blobToBase64, db as defaultDb, newId, type Attempt, type DocKind, type Item, type LernDB, type Topic } from "./db";
@@ -12,15 +13,18 @@ export async function createCourse(name: string, database: LernDB = defaultDb): 
 }
 
 export async function addDocuments(courseId: string, files: File[], kind: DocKind, database: LernDB = defaultDb) {
-  const recs = files.map((f) => ({
-    id: newId(),
-    courseId,
-    name: f.name,
-    kind,
-    bytes: f.size,
-    blob: f as Blob,
-    addedAt: Date.now(),
-  }));
+  const recs = await Promise.all(
+    files.map(async (f) => ({
+      id: newId(),
+      courseId,
+      name: f.name,
+      kind,
+      bytes: f.size,
+      pages: estimatePdfPages(new Uint8Array(await f.arrayBuffer())),
+      blob: f as Blob,
+      addedAt: Date.now(),
+    })),
+  );
   await database.documents.bulkAdd(recs);
   return recs.map((r) => r.id);
 }
@@ -98,7 +102,7 @@ export async function generateForTopics(
   topicIds: string[],
   countPerTopic: number,
   mix: FormatMix,
-  opts: CallOptions = {},
+  opts: CallOptions & { includeDocs?: boolean } = {},
   database: LernDB = defaultDb,
 ): Promise<number> {
   const course = await database.courses.get(courseId);
@@ -111,7 +115,7 @@ export async function generateForTopics(
       existingPrompts: (await database.items.where("topicId").equals(t.id).toArray()).map((i) => i.prompt),
     })),
   );
-  const docs = await docInputs(courseId, database);
+  const docs = opts.includeDocs === false ? [] : await docInputs(courseId, database);
   const generated = await generateItems(backend, course.name, specs, mix, docs, opts);
   const byName = new Map(topics.map((t) => [t.name, t.id]));
   const items = generated.map((g) => toItem(g, courseId, byName.get(g.topicName) ?? topics[0].id, "generated"));
@@ -125,7 +129,7 @@ export async function generateWeaknessVariations(
   courseId: string,
   topicId: string,
   count: number,
-  opts: CallOptions = {},
+  opts: CallOptions & { includeDocs?: boolean } = {},
   database: LernDB = defaultDb,
 ): Promise<number> {
   const course = await database.courses.get(courseId);
@@ -149,7 +153,7 @@ export async function generateWeaknessVariations(
     const mix = course.mix ?? { flashcard: 25, multiple_choice: 25, short_answer: 25, worked_problem: 25 };
     return generateForTopics(backend, courseId, [topicId], count, mix, opts, database);
   }
-  const docs = await docInputs(courseId, database);
+  const docs = opts.includeDocs === false ? [] : await docInputs(courseId, database);
   const generated = await generateVariations(backend, course.name, topicToData(topic), sources, count, docs, opts);
   const newItems = generated.map((g) => toItem(g, courseId, topicId, "variation"));
   await database.items.bulkAdd(newItems);

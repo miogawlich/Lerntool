@@ -10,7 +10,7 @@ test("Kompletter Ablauf: Einrichten, Upload, Analyse, Generierung, Lernen, SchwÃ
   await shot(page, "01-start");
 
   await setupGemini(page);
-  await page.getByTestId("test-connection").click();
+  await page.getByTestId("test-gemini").click();
   await expect(page.getByTestId("settings-msg")).toContainText("Gemini antwortet");
   await shot(page, "02-einstellungen");
 
@@ -96,7 +96,7 @@ test("Kompletter Ablauf: Einrichten, Upload, Analyse, Generierung, Lernen, SchwÃ
 test("Freie Stufe am Limit: verstÃ¤ndliche Fehlermeldung statt Absturz", async ({ page }) => {
   await mockGemini(page, { failFirstGenerate: 99 });
   await setupGemini(page);
-  await page.getByTestId("test-connection").click();
+  await page.getByTestId("test-gemini").click();
   await expect(page.getByRole("alert")).toContainText("Limit der kostenlosen Gemini-Stufe erreicht");
   await expect(page.getByRole("alert")).toContainText("7 s");
 });

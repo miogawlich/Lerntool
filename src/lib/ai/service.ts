@@ -40,6 +40,11 @@ export interface CallOptions {
   onUsage?: (usage: Usage, model: string, purpose: string) => void;
 }
 
+const NO_DOCS_NOTE: Part = {
+  type: "text",
+  text: "Hinweis: Das Vorlesungsmaterial ist diesmal nicht beigefügt (Sparmodus). Stütze dich auf die Themenbeschreibungen, Konzepte und Formeln unten und bleib streng innerhalb dieses Stoffs.",
+};
+
 const ANALYSIS_JSON = toStrictJsonSchema(AnalysisSchema);
 const GENERATION_JSON = toStrictJsonSchema(GenerationSchema);
 const GRADE_JSON = toStrictJsonSchema(GradeSchema);
@@ -182,7 +187,7 @@ export async function generateItems(
     opts.onProgress?.({ step: chunks.length > 1 ? `Erzeuge Aufgaben (Teil ${i + 1}/${chunks.length}) …` : "Erzeuge Aufgaben …" });
     const req: CompleteRequest = {
       system: GENERATE_SYSTEM,
-      parts: [...pdfParts(context), { type: "text", text: generateUserText(courseName, chunks[i], mix) }],
+      parts: [...(context.length ? pdfParts(context) : [NO_DOCS_NOTE]), { type: "text", text: generateUserText(courseName, chunks[i], mix) }],
       schema: GENERATION_JSON,
       effort: "medium",
       maxTokens: 48000,
@@ -209,7 +214,7 @@ export async function generateVariations(
   opts.onProgress?.({ step: "Erzeuge neue Übungsaufgaben zu deinen Schwächen …" });
   const req: CompleteRequest = {
     system: GENERATE_SYSTEM,
-    parts: [...pdfParts(context), { type: "text", text: variationUserText(courseName, topic, sources, count) }],
+    parts: [...(context.length ? pdfParts(context) : [NO_DOCS_NOTE]), { type: "text", text: variationUserText(courseName, topic, sources, count) }],
     schema: GENERATION_JSON,
     effort: "medium",
     maxTokens: 32000,

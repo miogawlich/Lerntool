@@ -19,6 +19,8 @@ export interface DocumentRec {
   name: string;
   kind: DocKind;
   bytes: number;
+  /** Geschätzte Seitenzahl (für Kostenschätzung). */
+  pages?: number;
   blob: Blob;
   addedAt: number;
   analyzedAt?: number;

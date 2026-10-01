@@ -2,12 +2,13 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ErrorBanner, useBusy } from "../components/Busy";
-import { defaultCallOptions, getBackend } from "../lib/ai";
+import { claudeCostThisMonth, defaultCallOptions, getBackendFor } from "../lib/ai";
+import type { ProviderId } from "../lib/ai/types";
 import { CLAUDE_MODELS } from "../lib/ai/models";
 import type { GeminiModelInfo } from "../lib/ai/gemini";
 import { exportAll, importAll } from "../lib/backup";
 import { db } from "../lib/db";
-import { updateSettings, useSettings } from "../lib/settings";
+import { PROVIDER_LABEL, providerReady, updateSettings, useSettings } from "../lib/settings";
 
 const TEST_SCHEMA = {
   type: "object",
@@ -39,7 +40,7 @@ export function SettingsPage() {
       tokens: rs.reduce((a, r) => a + r.inputTokens + r.outputTokens + r.cachedInputTokens, 0),
       cost: rs.reduce((a, r) => a + r.costUsd, 0),
     });
-    return { gemini: agg(sum("gemini")), claude: agg(sum("claude")) };
+    return { gemini: agg(sum("gemini")), claude: agg(sum("claude")), claudeMonth: await claudeCostThisMonth() };
   }, []);
 
   const loadModels = () =>
@@ -53,9 +54,9 @@ export function SettingsPage() {
       setMsg(`Verbunden – ${list.length} Modelle verfügbar.`);
     });
 
-  const testConnection = () =>
+  const testConnection = (provider: ProviderId) =>
     busy.run("Teste Verbindung …", async ({ signal }) => {
-      const backend = await getBackend();
+      const backend = await getBackendFor(provider);
       const res = await backend.complete({
         system: "Antworte knapp auf Deutsch.",
         parts: [{ type: "text", text: 'Antworte mit ok=true und message="Verbindung steht".' }],
@@ -93,56 +94,92 @@ export function SettingsPage() {
       {msg && <p className="notice good" data-testid="settings-msg">{msg}</p>}
 
       <section className="card stack">
-        <h2>KI-Anbieter</h2>
-        <div className="row">
-          <button className={s.provider === "gemini" ? "active" : ""} onClick={() => updateSettings({ provider: "gemini" })}>Google Gemini (kostenlos)</button>
-          <button className={s.provider === "claude" ? "active" : ""} onClick={() => updateSettings({ provider: "claude" })}>Anthropic Claude (kostenpflichtig)</button>
-        </div>
-
-        {s.provider === "gemini" ? (
-          <div className="stack">
-            <label className="field">
-              Gemini-API-Key
-              <span className="hint">Kostenlos erstellen unter <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a>.</span>
-              <input type={showKey ? "text" : "password"} value={s.geminiKey} onChange={(e) => updateSettings({ geminiKey: e.target.value.trim() })} autoComplete="off" spellCheck={false} placeholder="AIza…" data-testid="gemini-key" />
-            </label>
-            <div className="row">
-              <button onClick={() => setShowKey(!showKey)} className="small">{showKey ? "Verbergen" : "Anzeigen"}</button>
-              <button className="primary" disabled={!s.geminiKey} onClick={loadModels} data-testid="gemini-connect">Verbinden & Modelle laden</button>
+        <h2>Welche KI wofür?</h2>
+        <p className="small muted">
+          Am günstigsten: <b>Erstellen mit Gemini</b> (kostenlos) und <b>Bewerten mit Claude</b>. Die Bewertung einer Antwort kostet nur Cent-Beträge,
+          das Erstellen liest dagegen ganze PDFs und ist mit Claude der größte Kostenblock.
+        </p>
+        {(["create", "grade"] as const).map((purpose) => {
+          const key = purpose === "create" ? "createProvider" : "gradeProvider";
+          const current = s[key];
+          return (
+            <div key={purpose} className="spread">
+              <span style={{ minWidth: 260 }}>{purpose === "create" ? "Material analysieren & Aufgaben erstellen" : "Antworten bewerten (Text & Handschrift)"}</span>
+              <div className="row">
+                {(["gemini", "claude"] as const).map((p) => (
+                  <button key={p} className={current === p ? "active" : ""} onClick={() => updateSettings({ [key]: p })} data-testid={`${purpose}-${p}`}>
+                    {PROVIDER_LABEL[p]}
+                    {!providerReady(p, s) && <span className="badge warn">nicht eingerichtet</span>}
+                  </button>
+                ))}
+              </div>
             </div>
-            {(models.length > 0 || s.geminiModel) && (
-              <label className="field">
-                Modell
-                <select value={s.geminiModel} onChange={(e) => updateSettings({ geminiModel: e.target.value })} data-testid="gemini-model">
-                  {!models.some((m) => m.id === s.geminiModel) && s.geminiModel && <option value={s.geminiModel}>{s.geminiModel}</option>}
-                  {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                </select>
-                <span className="hint">Empfohlen: das neueste „Flash“-Modell (großes kostenloses Kontingent). „Pro“-Modelle sind stärker, haben im Free Tier aber engere Limits.</span>
-              </label>
-            )}
-            <p className="notice warn small">Hinweis: In der kostenlosen Stufe darf Google deine Eingaben (z. B. hochgeladene Folien) zur Verbesserung seiner Produkte verwenden. Es gelten Limits pro Minute und Tag.</p>
-          </div>
-        ) : (
-          <div className="stack">
-            <label className="field">
-              Claude-API-Key
-              <span className="hint">Aus der <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">Anthropic Console</a>. Wird separat abgerechnet – ein Claude.ai-Abo enthält keinen API-Zugang. Setze dort am besten ein Ausgabenlimit.</span>
-              <input type={showKey ? "text" : "password"} value={s.claudeKey} onChange={(e) => updateSettings({ claudeKey: e.target.value.trim() })} autoComplete="off" spellCheck={false} placeholder="sk-ant-…" data-testid="claude-key" />
-            </label>
-            <button onClick={() => setShowKey(!showKey)} className="small" style={{ alignSelf: "flex-start" }}>{showKey ? "Verbergen" : "Anzeigen"}</button>
-            <label className="field">
-              Modell
-              <select value={s.claudeModel} onChange={(e) => updateSettings({ claudeModel: e.target.value })}>
-                {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} – {m.inputPerM} $/{m.outputPerM} $ pro 1 Mio. Tokens</option>)}
-              </select>
-            </label>
-          </div>
+          );
+        })}
+        {s.createProvider === "claude" && (
+          <label className="check">
+            <input type="checkbox" checked={s.sendPdfsWithClaude} onChange={(e) => updateSettings({ sendPdfsWithClaude: e.target.checked })} data-testid="send-pdfs-claude" />
+            <span>
+              PDFs bei der Aufgabenerstellung mit Claude erneut mitschicken
+              <span className="hint muted small" style={{ display: "block" }}>
+                Aus (Sparmodus): Claude nutzt nur die bei der Analyse erkannten Themen, Konzepte und Formeln – ein Bruchteil der Kosten, Aufgaben etwas allgemeiner. An: Aufgaben näher am Material, kostet pro Durchgang etwa so viel wie die Analyse.
+              </span>
+            </span>
+          </label>
         )}
-        <div className="row">
-          <button onClick={testConnection} disabled={s.provider === "gemini" ? !s.geminiKey || !s.geminiModel : !s.claudeKey} data-testid="test-connection">Verbindung testen</button>
-        </div>
-        <p className="muted small">Die Keys werden nur auf diesem Gerät gespeichert (Browser-Speicher) und direkt an Google bzw. Anthropic geschickt – nie an einen anderen Server.</p>
       </section>
+
+      <section className="card stack">
+        <h2>Google Gemini (kostenlos)</h2>
+        <label className="field">
+          Gemini-API-Key
+          <span className="hint">Erstellen unter <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> oder in der Google Cloud Console (APIs &amp; Dienste → Anmeldedaten).</span>
+          <input type={showKey ? "text" : "password"} value={s.geminiKey} onChange={(e) => updateSettings({ geminiKey: e.target.value.trim() })} autoComplete="off" spellCheck={false} placeholder="AIza…" data-testid="gemini-key" />
+        </label>
+        <div className="row">
+          <button onClick={() => setShowKey(!showKey)} className="small">{showKey ? "Keys verbergen" : "Keys anzeigen"}</button>
+          <button className="primary" disabled={!s.geminiKey} onClick={loadModels} data-testid="gemini-connect">Verbinden & Modelle laden</button>
+          <button onClick={() => testConnection("gemini")} disabled={!s.geminiKey || !s.geminiModel} data-testid="test-gemini">Verbindung testen</button>
+        </div>
+        {(models.length > 0 || s.geminiModel) && (
+          <label className="field">
+            Modell
+            <select value={s.geminiModel} onChange={(e) => updateSettings({ geminiModel: e.target.value })} data-testid="gemini-model">
+              {!models.some((m) => m.id === s.geminiModel) && s.geminiModel && <option value={s.geminiModel}>{s.geminiModel}</option>}
+              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+            <span className="hint">Empfohlen: das neueste „Flash“-Modell (großes kostenloses Kontingent). „Pro“-Modelle sind stärker, haben im Free Tier aber engere Limits.</span>
+          </label>
+        )}
+        <p className="notice warn small">In der kostenlosen Stufe darf Google deine Eingaben (z. B. hochgeladene Folien) zur Verbesserung seiner Produkte verwenden. Es gelten Limits pro Minute und Tag.</p>
+      </section>
+
+      <section className="card stack">
+        <h2>Anthropic Claude (kostenpflichtig)</h2>
+        <label className="field">
+          Claude-API-Key
+          <span className="hint">Aus der <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">Anthropic Console</a>. Wird separat abgerechnet – ein Claude.ai-Abo enthält keinen API-Zugang. In der Console Guthaben vorab aufladen und automatisches Aufladen ausgeschaltet lassen.</span>
+          <input type={showKey ? "text" : "password"} value={s.claudeKey} onChange={(e) => updateSettings({ claudeKey: e.target.value.trim() })} autoComplete="off" spellCheck={false} placeholder="sk-ant-…" data-testid="claude-key" />
+        </label>
+        <div className="row">
+          <button onClick={() => testConnection("claude")} disabled={!s.claudeKey} data-testid="test-claude">Verbindung testen</button>
+        </div>
+        <label className="field">
+          Modell
+          <select value={s.claudeModel} onChange={(e) => updateSettings({ claudeModel: e.target.value })}>
+            {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} – {m.inputPerM} $/{m.outputPerM} $ pro 1 Mio. Tokens</option>)}
+          </select>
+        </label>
+        <label className="field" style={{ maxWidth: 360 }}>
+          Monatsbudget in $ (0 = keine Sperre)
+          <span className="hint">Ist es erreicht, blockiert die App weitere Claude-Anfragen bis zum Monatsende. Diese Sperre wirkt nur in der App, deshalb zusätzlich das Limit in der Anthropic Console nutzen.</span>
+          <input type="number" min={0} step={0.5} value={s.claudeMonthlyBudget} onChange={(e) => updateSettings({ claudeMonthlyBudget: Math.max(0, Number(e.target.value) || 0) })} data-testid="claude-budget" />
+        </label>
+        <p className="small" data-testid="claude-month">
+          Diesen Monat verbraucht: ca. {(usage?.claudeMonth ?? 0).toFixed(2)} ${s.claudeMonthlyBudget > 0 ? ` von ${s.claudeMonthlyBudget.toFixed(2)} $` : ""}
+        </p>
+      </section>
+      <p className="muted small">Die Keys werden nur auf diesem Gerät gespeichert (Browser-Speicher) und direkt an Google bzw. Anthropic geschickt – nie an einen anderen Server.</p>
 
       <section className="card stack">
         <h2>Lernen</h2>

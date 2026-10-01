@@ -194,7 +194,7 @@ function OpenAnswer({ item, onDone }: { item: Item; onDone: (s: number) => void 
   const aiGrade = () =>
     busy.run("KI bewertet deine Antwort …", async ({ signal }) => {
       const img = await snapshot();
-      const result = await gradeAnswer(await getBackend(), { ...item, topicName: "" }, { text, imagePngBase64: img?.base64 }, defaultCallOptions({ signal }));
+      const result = await gradeAnswer(await getBackend("grade"), { ...item, topicName: "" }, { text, imagePngBase64: img?.base64 }, defaultCallOptions({ signal }));
       setPhase({ kind: "ai", result });
     });
 
@@ -219,12 +219,12 @@ function OpenAnswer({ item, onDone }: { item: Item; onDone: (s: number) => void 
           </div>
           {input === "text" && <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Deine Antwort … (Formeln gern als $x^2$)" aria-label="Antwort" />}
           <div className="row">
-            {settings.autoGrade && hasActiveKey(settings) ? (
+            {settings.autoGrade && hasActiveKey(settings, "grade") ? (
               <button className="primary" disabled={empty} onClick={aiGrade} data-testid="ai-grade">Abgeben (KI bewertet)</button>
             ) : (
               <>
                 <button className="primary" onClick={async () => { await snapshot(); setPhase({ kind: "self" }); }} data-testid="self-grade">Lösung zeigen & selbst bewerten</button>
-                <button disabled={empty || !hasActiveKey(settings)} onClick={aiGrade} data-testid="ai-grade" title={hasActiveKey(settings) ? "" : "Erst KI-Anbieter einrichten"}>🤖 KI bewerten</button>
+                <button disabled={empty || !hasActiveKey(settings, "grade")} onClick={aiGrade} data-testid="ai-grade" title={hasActiveKey(settings, "grade") ? "" : "Erst die KI fürs Bewerten in den Einstellungen einrichten"}>🤖 KI bewerten</button>
               </>
             )}
           </div>

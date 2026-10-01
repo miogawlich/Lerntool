@@ -16,7 +16,14 @@ KI-gestützte Lern-App fürs Studium, optimiert fürs iPad mit Apple Pencil. Sie
 | Key | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | [console.anthropic.com](https://console.anthropic.com/settings/keys) |
 | Datenschutz | In der kostenlosen Stufe darf Google deine Eingaben zur Produktverbesserung nutzen. | Eingaben werden laut Anthropic nicht zum Training verwendet. |
 
-Ein Claude.ai-Abo enthält **keinen** API-Zugang. Wenn du Claude nutzt, setz in der Console ein Ausgabenlimit. Um Kosten zu sparen, gilt standardmäßig: Bei offenen Aufgaben vergleichst du selbst mit der Musterlösung, die KI-Bewertung startest du per Knopf.
+Ein Claude.ai-Abo enthält **keinen** API-Zugang. Wenn du Claude nutzt: Guthaben vorab aufladen und automatisches Aufladen in der Console ausgeschaltet lassen.
+
+**Kosten sparen:**
+- Unter *Einstellungen → Welche KI wofür?* kannst du die KI getrennt wählen. Am günstigsten ist: **Erstellen mit Gemini** (kostenlos) und **Bewerten mit Claude**, das kostet ca. 1 Cent pro Antwort.
+- Erstellst du Aufgaben mit Claude, werden die PDFs standardmäßig nicht erneut mitgeschickt (Sparmodus). Claude nutzt dann die Themen aus der Analyse.
+- Vor teuren Claude-Aktionen zeigt die App eine grobe Kostenschätzung an.
+- Das **Monatsbudget** (Standard 5 $) sperrt weitere Claude-Aufrufe, sobald es erreicht ist.
+- Bei offenen Aufgaben vergleichst du standardmäßig selbst mit der Musterlösung. Die KI-Bewertung startest du per Knopf.
 
 Die Keys liegen nur im Browser-Speicher deines Geräts und gehen direkt an Google bzw. Anthropic.
 
