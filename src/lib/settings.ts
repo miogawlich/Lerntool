@@ -14,8 +14,14 @@ export interface Settings {
   geminiModel: string;
   claudeKey: string;
   claudeModel: string;
-  /** Monatliches Claude-Budget in US-Dollar; 0 = keine Sperre. */
-  claudeMonthlyBudget: number;
+  /** Monatliches Claude-Budget in Euro; 0 = keine Sperre. */
+  claudeMonthlyBudgetEur: number;
+  /** Wechselkurs: 1 US-Dollar = x Euro. */
+  usdToEur: number;
+  /** Datum des EZB-Kurses (YYYY-MM-DD), leer wenn nie abgerufen. */
+  usdToEurDate: string;
+  usdToEurSource: "default" | "ecb" | "manual";
+  usdToEurFetchedAt: number;
   /** PDFs bei der Aufgabenerstellung mit Claude erneut mitschicken (bessere Aufgaben, deutlich teurer). */
   sendPdfsWithClaude: boolean;
   /** Offene Aufgaben automatisch per KI bewerten (sonst Selbstvergleich + Button). */
@@ -36,7 +42,12 @@ export const DEFAULT_SETTINGS: Settings = {
   geminiModel: "",
   claudeKey: "",
   claudeModel: DEFAULT_CLAUDE_MODEL,
-  claudeMonthlyBudget: 5,
+  claudeMonthlyBudgetEur: 5,
+  // Platzhalter bis zum ersten Abruf des EZB-Kurses
+  usdToEur: 0.86,
+  usdToEurDate: "",
+  usdToEurSource: "default",
+  usdToEurFetchedAt: 0,
   sendPdfsWithClaude: false,
   autoGrade: false,
   fingerDraws: false,
@@ -59,6 +70,11 @@ export function getSettings(): Settings {
       stored.gradeProvider = stored.provider;
     }
     delete stored.provider;
+    // Ältere Version speicherte das Budget in Dollar.
+    if (stored.claudeMonthlyBudget !== undefined && stored.claudeMonthlyBudgetEur === undefined) {
+      stored.claudeMonthlyBudgetEur = stored.claudeMonthlyBudget;
+    }
+    delete stored.claudeMonthlyBudget;
     cache = { ...DEFAULT_SETTINGS, ...stored };
   } catch {
     cache = { ...DEFAULT_SETTINGS };

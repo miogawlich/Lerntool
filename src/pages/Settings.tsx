@@ -8,6 +8,7 @@ import { CLAUDE_MODELS } from "../lib/ai/models";
 import type { GeminiModelInfo } from "../lib/ai/gemini";
 import { exportAll, importAll } from "../lib/backup";
 import { db } from "../lib/db";
+import { formatEur, formatUsdAsEur, refreshRateIfStale } from "../lib/currency";
 import { PROVIDER_LABEL, providerReady, updateSettings, useSettings } from "../lib/settings";
 
 const TEST_SCHEMA = {
@@ -167,17 +168,57 @@ export function SettingsPage() {
         <label className="field">
           Modell
           <select value={s.claudeModel} onChange={(e) => updateSettings({ claudeModel: e.target.value })}>
-            {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} – {m.inputPerM} $/{m.outputPerM} $ pro 1 Mio. Tokens</option>)}
+            {CLAUDE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} – ca. {formatUsdAsEur(m.inputPerM)} / {formatUsdAsEur(m.outputPerM)} pro 1 Mio. Tokens (Ein-/Ausgabe)</option>)}
           </select>
         </label>
         <label className="field" style={{ maxWidth: 360 }}>
-          Monatsbudget in $ (0 = keine Sperre)
+          Monatsbudget in € (0 = keine Sperre)
           <span className="hint">Ist es erreicht, blockiert die App weitere Claude-Anfragen bis zum Monatsende. Diese Sperre wirkt nur in der App, deshalb zusätzlich das Limit in der Anthropic Console nutzen.</span>
-          <input type="number" min={0} step={0.5} value={s.claudeMonthlyBudget} onChange={(e) => updateSettings({ claudeMonthlyBudget: Math.max(0, Number(e.target.value) || 0) })} data-testid="claude-budget" />
+          <input type="number" min={0} step={0.5} value={s.claudeMonthlyBudgetEur} onChange={(e) => updateSettings({ claudeMonthlyBudgetEur: Math.max(0, Number(e.target.value) || 0) })} data-testid="claude-budget" />
         </label>
         <p className="small" data-testid="claude-month">
-          Diesen Monat verbraucht: ca. {(usage?.claudeMonth ?? 0).toFixed(2)} ${s.claudeMonthlyBudget > 0 ? ` von ${s.claudeMonthlyBudget.toFixed(2)} $` : ""}
+          Diesen Monat verbraucht: ca. {formatUsdAsEur(usage?.claudeMonth ?? 0)}
+          {s.claudeMonthlyBudgetEur > 0 ? ` von ${formatEur(s.claudeMonthlyBudgetEur)}` : ""}
         </p>
+        <div className="stack" style={{ gap: 6 }}>
+          <p className="small" data-testid="rate-info">
+            Umrechnung: 1 $ = {s.usdToEur.toLocaleString("de-DE", { maximumFractionDigits: 4 })} €{" "}
+            {s.usdToEurSource === "ecb" && <span className="muted">(EZB-Referenzkurs vom {new Date(s.usdToEurDate).toLocaleDateString("de-DE")})</span>}
+            {s.usdToEurSource === "manual" && <span className="muted">(manuell festgelegt)</span>}
+            {s.usdToEurSource === "default" && <span className="badge warn">Platzhalter – noch kein aktueller Kurs geladen</span>}
+          </p>
+          <div className="row">
+            <button
+              className="small"
+              data-testid="rate-refresh"
+              onClick={() =>
+                busy.run("Lade Wechselkurs …", async () => {
+                  if (!(await refreshRateIfStale(true))) throw new Error("Wechselkurs konnte nicht geladen werden (offline?). Der bisherige Kurs bleibt aktiv.");
+                  setMsg("Wechselkurs aktualisiert.");
+                })
+              }
+            >
+              EZB-Kurs aktualisieren
+            </button>
+            <label className="row small">
+              oder selbst festlegen:
+              <input
+                type="number"
+                min={0.3}
+                max={3}
+                step={0.01}
+                style={{ width: 110 }}
+                aria-label="Wechselkurs manuell"
+                defaultValue={s.usdToEur}
+                onBlur={(e) => {
+                  const v = Number(e.target.value);
+                  if (v >= 0.3 && v <= 3) updateSettings({ usdToEur: v, usdToEurSource: "manual" });
+                }}
+              />
+            </label>
+          </div>
+          <p className="muted small">Anthropic rechnet in US-Dollar ab. Deine Bank rechnet beim Abbuchen mit ihrem eigenen Kurs um und erhebt ggf. Auslandsgebühren – die Euro-Werte sind daher Näherungen.</p>
+        </div>
       </section>
       <p className="muted small">Die Keys werden nur auf diesem Gerät gespeichert (Browser-Speicher) und direkt an Google bzw. Anthropic geschickt – nie an einen anderen Server.</p>
 
@@ -200,7 +241,7 @@ export function SettingsPage() {
       <section className="card stack">
         <h2>Verbrauch (letzte 30 Tage)</h2>
         <p>Gemini: {usage?.gemini.calls ?? 0} Anfragen, {(usage?.gemini.tokens ?? 0).toLocaleString("de-DE")} Tokens (kostenlos im Free Tier)</p>
-        <p>Claude: {usage?.claude.calls ?? 0} Anfragen, {(usage?.claude.tokens ?? 0).toLocaleString("de-DE")} Tokens, ca. {(usage?.claude.cost ?? 0).toFixed(2)} $</p>
+        <p>Claude: {usage?.claude.calls ?? 0} Anfragen, {(usage?.claude.tokens ?? 0).toLocaleString("de-DE")} Tokens, ca. {formatUsdAsEur(usage?.claude.cost ?? 0)}</p>
       </section>
 
       <section className="card stack">

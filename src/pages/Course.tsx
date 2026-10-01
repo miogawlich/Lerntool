@@ -6,7 +6,8 @@ import { Difficulty, MasteryBar, RelevanceBadge, formatBytes } from "../componen
 import { MathText } from "../components/MathText";
 import { addDocuments, analyzeCourse, generateForTopics, generateWeaknessVariations } from "../lib/actions";
 import { claudeCostThisMonth, defaultCallOptions, getBackend, includePdfsForCreate } from "../lib/ai";
-import { estimateClaudeCost, formatUsd } from "../lib/ai/estimate";
+import { estimateClaudeCost } from "../lib/ai/estimate";
+import { formatEur, formatUsdAsEur } from "../lib/currency";
 import { db, deleteCourse, type Course, type DocKind, type Item, type Topic } from "../lib/db";
 import { ERROR_TYPE_LABELS, ITEM_TYPE_LABELS, ITEM_TYPES, normalizeMix, type ErrorType, type FormatMix } from "../lib/schemas";
 import { computeMastery, errorTypeStats, weakestTopics, type TopicMastery } from "../lib/scheduler";
@@ -22,11 +23,11 @@ async function confirmClaudeCost(what: string, pages: number, outputTokens: numb
   const one = estimateClaudeCost(s.claudeModel, pages, outputTokens / requests);
   const usd = one.usd * requests;
   const spent = await claudeCostThisMonth();
-  const budget = s.claudeMonthlyBudget > 0 ? ` von ${formatUsd(s.claudeMonthlyBudget)} Budget` : "";
+  const budget = s.claudeMonthlyBudgetEur > 0 ? ` von ${formatEur(s.claudeMonthlyBudgetEur)} Budget` : "";
   return confirm(
-    `${what} mit Claude kostet grob ${formatUsd(usd)}` +
+    `${what} mit Claude kostet grob ${formatUsdAsEur(usd)}` +
       (pages ? ` (ca. ${pages} PDF-Seiten${requests > 1 ? `, ${requests} Anfragen` : ""})` : " (ohne PDFs, Sparmodus)") +
-      `.\nDiesen Monat bisher: ${formatUsd(spent)}${budget}.\n\nFortfahren?`,
+      `.\nDiesen Monat bisher: ${formatUsdAsEur(spent)}${budget}.\n\nFortfahren?`,
   );
 }
 

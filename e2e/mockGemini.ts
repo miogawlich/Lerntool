@@ -39,6 +39,10 @@ function itemsFor(topic: string) {
 export async function mockGemini(page: Page, opts: { failFirstGenerate?: number } = {}): Promise<GeminiLog> {
   const log: GeminiLog = { generate: [] };
   let failures = opts.failFirstGenerate ?? 0;
+  // EZB-Wechselkurs (Frankfurter-API) deterministisch
+  await page.route("https://api.frankfurter.dev/**", (route) =>
+    json(route, { amount: 1, base: "USD", date: "2026-09-30", rates: { EUR: 0.9 } }),
+  );
   await page.route("https://generativelanguage.googleapis.com/**", async (route) => {
     const url = route.request().url();
     if (route.request().method() === "GET" && /\/models(\?|$)/.test(url)) {

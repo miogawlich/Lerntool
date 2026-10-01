@@ -1,10 +1,11 @@
 import { db } from "../db";
+import { formatEur, usdToEur } from "../currency";
 import { getSettings, providerFor, type Purpose } from "../settings";
 import { claudeCostUsd } from "./models";
 import type { CallOptions } from "./service";
 import { AIError, type LLMBackend, type ProviderId, type Usage } from "./types";
 
-/** Summe der Claude-Kosten im laufenden Kalendermonat (aus dem lokalen Verbrauchsprotokoll). */
+/** Summe der Claude-Kosten (in US-Dollar) im laufenden Kalendermonat (aus dem lokalen Verbrauchsprotokoll). */
 export async function claudeCostThisMonth(now = new Date()): Promise<number> {
   const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const rows = await db.usage.where("at").aboveOrEqual(start).toArray();
@@ -13,13 +14,13 @@ export async function claudeCostThisMonth(now = new Date()): Promise<number> {
 
 /** Wirft einen verständlichen Fehler, wenn das Monatsbudget für Claude aufgebraucht ist. */
 export async function assertClaudeBudget(): Promise<void> {
-  const budget = getSettings().claudeMonthlyBudget;
-  if (!budget || budget <= 0) return;
-  const spent = await claudeCostThisMonth();
-  if (spent >= budget) {
+  const budgetEur = getSettings().claudeMonthlyBudgetEur;
+  if (!budgetEur || budgetEur <= 0) return;
+  const spentEur = usdToEur(await claudeCostThisMonth());
+  if (spentEur >= budgetEur) {
     throw new AIError(
       "budget",
-      `Dein Claude-Budget für diesen Monat (${budget.toFixed(2)} $) ist erreicht (verbraucht ca. ${spent.toFixed(2)} $). Erhöhe es in den Einstellungen oder nutze Gemini.`,
+      `Dein Claude-Budget für diesen Monat (${formatEur(budgetEur)}) ist erreicht (verbraucht ca. ${formatEur(spentEur)}). Erhöhe es in den Einstellungen oder nutze Gemini.`,
     );
   }
 }

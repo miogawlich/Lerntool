@@ -26,7 +26,3 @@ export function estimateClaudeCost(model: string, pages: number, outputTokens: n
   const inputTokens = pages * TOKENS_PER_PAGE + extraInputTokens;
   return { inputTokens, outputTokens, usd: claudeCostUsd(model, inputTokens, outputTokens) };
 }
-
-export function formatUsd(v: number): string {
-  return v < 0.01 ? "< 0,01 $" : `${v.toFixed(2).replace(".", ",")} $`;
-}

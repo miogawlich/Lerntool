@@ -22,7 +22,8 @@ Ein Claude.ai-Abo enthält **keinen** API-Zugang. Wenn du Claude nutzt: Guthaben
 - Unter *Einstellungen → Welche KI wofür?* kannst du die KI getrennt wählen. Am günstigsten ist: **Erstellen mit Gemini** (kostenlos) und **Bewerten mit Claude**, das kostet ca. 1 Cent pro Antwort.
 - Erstellst du Aufgaben mit Claude, werden die PDFs standardmäßig nicht erneut mitgeschickt (Sparmodus). Claude nutzt dann die Themen aus der Analyse.
 - Vor teuren Claude-Aktionen zeigt die App eine grobe Kostenschätzung an.
-- Das **Monatsbudget** (Standard 5 $) sperrt weitere Claude-Aufrufe, sobald es erreicht ist.
+- Das **Monatsbudget** (Standard 5 €) sperrt weitere Claude-Aufrufe, sobald es erreicht ist.
+- Alle Beträge zeigt die App in Euro an, umgerechnet mit dem EZB-Referenzkurs (über die Frankfurter-API, täglich aktualisiert, alternativ manuell festlegbar). Anthropic rechnet in US-Dollar ab. Deine Bank rechnet mit ihrem eigenen Kurs um und erhebt ggf. Gebühren, die Euro-Beträge sind daher Näherungen.
 - Bei offenen Aufgaben vergleichst du standardmäßig selbst mit der Musterlösung. Die KI-Bewertung startest du per Knopf.
 
 Die Keys liegen nur im Browser-Speicher deines Geräts und gehen direkt an Google bzw. Anthropic.

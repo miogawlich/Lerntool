@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { estimateClaudeCost, estimatePdfPages, formatUsd } from "../src/lib/ai/estimate";
+import { estimateClaudeCost, estimatePdfPages } from "../src/lib/ai/estimate";
+import { fetchUsdEurRate, formatEur, formatUsdAsEur, refreshRateIfStale } from "../src/lib/currency";
 import { claudeCostThisMonth, getBackendFor, includePdfsForCreate, recordUsage } from "../src/lib/ai";
 import { generateItems } from "../src/lib/ai/service";
 import { AIError } from "../src/lib/ai/types";
@@ -38,14 +39,14 @@ describe("Monatsbudget", () => {
     expect(await claudeCostThisMonth()).toBeCloseTo(2, 5);
   });
   it("sperrt Claude, wenn das Budget erreicht ist – Gemini bleibt nutzbar", async () => {
-    updateSettings({ claudeKey: "sk-ant-test", claudeMonthlyBudget: 1, geminiKey: "g", geminiModel: "gemini-x" });
+    updateSettings({ claudeKey: "sk-ant-test", claudeMonthlyBudgetEur: 1, usdToEur: 0.9, geminiKey: "g", geminiModel: "gemini-x" });
     await recordUsage({ inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 }, "claude-sonnet-5-5", "test");
     const err = await getBackendFor("claude").catch((e) => e);
     expect(err).toBeInstanceOf(AIError);
     expect((err as AIError).kind).toBe("budget");
     expect((err as AIError).message).toContain("Budget");
     await expect(getBackendFor("gemini")).resolves.toBeTruthy();
-    updateSettings({ claudeMonthlyBudget: 0 }); // 0 = keine Sperre
+    updateSettings({ claudeMonthlyBudgetEur: 0 }); // 0 = keine Sperre
     await expect(getBackendFor("claude")).resolves.toBeTruthy();
   });
 });
@@ -70,7 +71,39 @@ describe("Kostenschätzung", () => {
     const e = estimateClaudeCost("claude-sonnet-5-5", 100, 10_000, 0);
     expect(e.inputTokens).toBe(250_000);
     expect(e.usd).toBeCloseTo(0.5 + 0.1, 5);
-    expect(formatUsd(0.6)).toBe("0,60 $");
-    expect(formatUsd(0.001)).toBe("< 0,01 $");
+    expect(formatEur(0.6)).toBe("0,60 €");
+    expect(formatEur(0.001)).toBe("< 0,01 €");
+    expect(formatUsdAsEur(2, 0.9)).toBe("1,80 €");
+  });
+});
+
+describe("Euro-Umrechnung", () => {
+  const okFetch = (async () => new Response(JSON.stringify({ base: "USD", date: "2026-09-30", rates: { EUR: 0.912 } }))) as unknown as typeof fetch;
+  it("Budget gilt in Euro: 1 € Budget ist bei 0,90 €/$ nach ~1,11 $ erreicht", async () => {
+    updateSettings({ claudeKey: "sk-ant-test", claudeMonthlyBudgetEur: 1, usdToEur: 0.9 });
+    await db.usage.add({ at: Date.now(), provider: "claude", model: "claude-sonnet-5-5", purpose: "t", inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, costUsd: 1.05 });
+    await expect(getBackendFor("claude")).resolves.toBeTruthy(); // 0,945 € < 1 €
+    await db.usage.add({ at: Date.now(), provider: "claude", model: "claude-sonnet-5-5", purpose: "t", inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, costUsd: 0.1 });
+    const err = await getBackendFor("claude").catch((e) => e);
+    expect((err as AIError).kind).toBe("budget");
+    expect((err as AIError).message).toContain("1,00 €");
+  });
+  it("lädt den EZB-Kurs und speichert Datum + Quelle", async () => {
+    expect(await fetchUsdEurRate(okFetch)).toEqual({ rate: 0.912, date: "2026-09-30" });
+    expect(await refreshRateIfStale(false, okFetch)).toBe(true);
+    expect(getSettings()).toMatchObject({ usdToEur: 0.912, usdToEurDate: "2026-09-30", usdToEurSource: "ecb" });
+    // Innerhalb eines Tages kein erneuter Abruf
+    expect(await refreshRateIfStale(false, okFetch)).toBe(false);
+  });
+  it("manueller Kurs wird nicht überschrieben, offline bleibt der alte Kurs", async () => {
+    updateSettings({ usdToEur: 0.8, usdToEurSource: "manual", usdToEurFetchedAt: 0 });
+    expect(await refreshRateIfStale(false, okFetch)).toBe(false);
+    expect(getSettings().usdToEur).toBe(0.8);
+    updateSettings({ usdToEurSource: "ecb" });
+    const offline = (async () => { throw new TypeError("fetch failed"); }) as unknown as typeof fetch;
+    expect(await refreshRateIfStale(true, offline)).toBe(false);
+    expect(getSettings().usdToEur).toBe(0.8);
+    const absurd = (async () => new Response(JSON.stringify({ rates: { EUR: 42 } }))) as unknown as typeof fetch;
+    await expect(fetchUsdEurRate(absurd)).rejects.toThrow(/Ungültiger/);
   });
 });

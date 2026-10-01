@@ -6,10 +6,13 @@ import { HomePage } from "./pages/Home";
 import { CoursePage } from "./pages/Course";
 import { StudyPage } from "./pages/Study";
 import { SettingsPage } from "./pages/Settings";
+import { refreshRateIfStale } from "./lib/currency";
 import "./styles.css";
 
 // Daten möglichst vor automatischem Löschen durch Safari schützen.
 void navigator.storage?.persist?.().catch(() => undefined);
+// Euro-Umrechnung aktuell halten (EZB-Kurs, höchstens einmal täglich).
+void refreshRateIfStale();
 
 function App() {
   return (

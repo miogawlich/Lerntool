@@ -43,7 +43,10 @@ test("Erstellen mit Gemini, Bewerten mit Claude, Budgetsperre", async ({ page })
 
   // Verbrauch wird erfasst; mit winzigem Budget sperrt die App weitere Claude-Aufrufe
   await page.goto("/#/settings");
-  await expect(page.getByTestId("claude-month")).toContainText("verbraucht: ca. 0.01");
+  await expect(page.getByTestId("claude-month")).toContainText("verbraucht: ca. < 0,01 €");
+  await expect(page.getByTestId("claude-month")).toContainText("von 1,00 €");
+  await expect(page.getByTestId("rate-info")).toContainText("1 $ = 0,9 €");
+  await expect(page.getByTestId("rate-info")).toContainText("EZB-Referenzkurs vom 30.9.2026");
 });
 
 test("Budget erreicht: verständliche Meldung statt Claude-Aufruf", async ({ page }) => {
@@ -52,9 +55,10 @@ test("Budget erreicht: verständliche Meldung statt Claude-Aufruf", async ({ pag
   await setupGemini(page);
   await page.getByTestId("claude-key").fill("sk-ant-test");
   await page.getByTestId("claude-budget").fill("0.001");
+  await expect(page.locator("label", { hasText: "Monatsbudget in €" })).toBeVisible();
   await page.getByTestId("test-claude").click(); // erster Aufruf geht durch und verbraucht > Budget
   await expect(page.getByTestId("settings-msg")).toContainText("Claude antwortet");
   await page.getByTestId("test-claude").click();
-  await expect(page.getByRole("alert")).toContainText("Claude-Budget für diesen Monat");
+  await expect(page.getByRole("alert")).toContainText("Claude-Budget für diesen Monat (< 0,01 €)");
   expect(claude.requests).toHaveLength(1);
 });
