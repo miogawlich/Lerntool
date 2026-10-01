@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -36,6 +36,8 @@ jobs:
           path: dist
 
   deploy:
+    # Veröffentlicht wird nur vom Haupt-Branch; andere Branches werden nur getestet.
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
