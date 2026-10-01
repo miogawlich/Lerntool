@@ -58,8 +58,9 @@ async function structured<T>(
   opts: CallOptions,
 ): Promise<T> {
   let lastErr: unknown;
+  const withStatus: CompleteRequest = { ...req, onStatus: (m) => opts.onProgress?.({ step: m }) };
   for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await backend.complete(req);
+    const res = await backend.complete(withStatus);
     opts.onUsage?.(res.usage, res.model, purpose);
     try {
       const parsed = schema.safeParse(extractJson(res.text));
@@ -139,7 +140,26 @@ export async function analyzeDocuments(
       signal: opts.signal,
       onProgress: (n) => opts.onProgress?.({ step: "Analysiere Material …", receivedChars: n }),
     };
-    const res = await structured(backend, AnalysisSchema, req, "analyze", opts);
+    let res: Analysis;
+    try {
+      res = await structured(backend, AnalysisSchema, req, "analyze", opts);
+    } catch (e) {
+      // Interner Google-Fehler oder zu groß bei mehreren Dateien: Datei für Datei erneut versuchen.
+      if (!(e instanceof AIError) || !["server", "too_large"].includes(e.kind) || batch.length < 2) throw e;
+      for (const single of batch) {
+        opts.onProgress?.({ step: `Analysiere einzeln: ${single.name} …` });
+        const r = await structured(
+          backend,
+          AnalysisSchema,
+          { ...req, parts: [...pdfParts([single]), { type: "text", text: analyzeUserText(courseName, [single], topics) }] },
+          "analyze",
+          opts,
+        );
+        result = { ...r, recommendedMix: normalizeMix(r.recommendedMix) };
+        topics = mergeTopics(topics, r.topics);
+      }
+      continue;
+    }
     result = { ...res, recommendedMix: normalizeMix(res.recommendedMix) };
     topics = mergeTopics(topics, result.topics);
   }

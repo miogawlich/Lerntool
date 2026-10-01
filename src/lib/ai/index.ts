@@ -33,8 +33,8 @@ export async function getBackendFor(provider: ProviderId): Promise<LLMBackend> {
     const { ClaudeBackend } = await import("./claude");
     return new ClaudeBackend(s.claudeKey, s.claudeModel);
   }
-  const { GeminiBackend } = await import("./gemini");
-  return new GeminiBackend(s.geminiKey, s.geminiModel);
+  const { GeminiBackend, pickFallbackModels } = await import("./gemini");
+  return new GeminiBackend(s.geminiKey, s.geminiModel, { fallbackModels: pickFallbackModels(s.geminiModels, s.geminiModel) });
 }
 
 /** Backend für einen Zweck: „create“ (Analyse/Aufgaben) oder „grade“ (Bewertung). */

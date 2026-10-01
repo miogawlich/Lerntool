@@ -1,6 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { ErrorBanner, useBusy } from "../components/Busy";
 import { claudeCostThisMonth, defaultCallOptions, getBackendFor } from "../lib/ai";
 import type { ProviderId } from "../lib/ai/types";
@@ -51,7 +50,11 @@ export function SettingsPage() {
       setModels(list);
       if (!list.length) throw new Error("Keine passenden Gemini-Modelle gefunden.");
       const keep = list.some((m) => m.id === s.geminiModel);
-      updateSettings({ geminiModel: keep ? s.geminiModel : pickDefaultGeminiModel(list.map((m) => m.id)) ?? list[0].id });
+      const ids = list.map((m) => m.id);
+      const best = pickDefaultGeminiModel(ids) ?? ids[0];
+      // Vorabversionen (Preview) sind im Free Tier oft überlastet → auf stabiles Modell wechseln.
+      const isPreview = /(preview|exp|latest)/.test(s.geminiModel);
+      updateSettings({ geminiModels: ids, geminiModel: keep && !isPreview ? s.geminiModel : best });
       setMsg(`Verbunden – ${list.length} Modelle verfügbar.`);
     });
 
@@ -89,7 +92,6 @@ export function SettingsPage() {
 
   return (
     <main className="page stack">
-      <Link to="/" className="crumb small">← Kurse</Link>
       <h1>Einstellungen</h1>
       <ErrorBanner />
       {msg && <p className="notice good" data-testid="settings-msg">{msg}</p>}
@@ -149,7 +151,10 @@ export function SettingsPage() {
               {!models.some((m) => m.id === s.geminiModel) && s.geminiModel && <option value={s.geminiModel}>{s.geminiModel}</option>}
               {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
-            <span className="hint">Empfohlen: das neueste „Flash“-Modell (großes kostenloses Kontingent). „Pro“-Modelle sind stärker, haben im Free Tier aber engere Limits.</span>
+            {/(preview|exp|latest)/.test(s.geminiModel) && (
+              <span className="notice warn small" data-testid="preview-warning">Das ist eine Vorabversion (Preview). Solche Modelle sind in der kostenlosen Stufe oft überlastet – besser ein stabiles „Flash“-Modell wählen.</span>
+            )}
+            <span className="hint">Empfohlen: das neueste stabile „Flash“-Modell (großes kostenloses Kontingent). „Pro“-Modelle sind stärker, haben im Free Tier aber engere Limits.</span>
           </label>
         )}
         <p className="notice warn small">In der kostenlosen Stufe darf Google deine Eingaben (z. B. hochgeladene Folien) zur Verbesserung seiner Produkte verwenden. Es gelten Limits pro Minute und Tag.</p>

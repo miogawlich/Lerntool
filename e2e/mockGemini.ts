@@ -36,7 +36,7 @@ function itemsFor(topic: string) {
   ];
 }
 
-export async function mockGemini(page: Page, opts: { failFirstGenerate?: number } = {}): Promise<GeminiLog> {
+export async function mockGemini(page: Page, opts: { failFirstGenerate?: number; failStatus?: number } = {}): Promise<GeminiLog> {
   const log: GeminiLog = { generate: [] };
   let failures = opts.failFirstGenerate ?? 0;
   // EZB-Wechselkurs (Frankfurter-API) deterministisch
@@ -50,6 +50,8 @@ export async function mockGemini(page: Page, opts: { failFirstGenerate?: number 
         models: [
           { name: "models/gemini-3.0-flash", displayName: "Gemini 3.0 Flash", supportedGenerationMethods: ["generateContent"] },
           { name: "models/gemini-3.0-pro", displayName: "Gemini 3.0 Pro", supportedGenerationMethods: ["generateContent"] },
+          { name: "models/gemini-3.5-flash-preview", displayName: "Gemini 3.5 Flash Preview", supportedGenerationMethods: ["generateContent"] },
+          { name: "models/gemini-2.5-flash", displayName: "Gemini 2.5 Flash", supportedGenerationMethods: ["generateContent"] },
           { name: "models/text-embedding-004", displayName: "Embedding", supportedGenerationMethods: ["embedContent"] },
         ],
       });
@@ -62,6 +64,8 @@ export async function mockGemini(page: Page, opts: { failFirstGenerate?: number 
       log.generate.push({ system, parts, model });
       if (failures > 0) {
         failures--;
+        if (opts.failStatus === 503)
+          return json(route, { error: { code: 503, message: "The model is overloaded. Please try again later.", status: "UNAVAILABLE" } }, 503);
         return json(route, { error: { code: 429, message: "Resource has been exhausted. Please retry in 7s.", status: "RESOURCE_EXHAUSTED" } }, 429);
       }
       const userText = parts.map((p: { text?: string }) => p.text ?? "").join("\n");

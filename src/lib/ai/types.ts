@@ -16,6 +16,8 @@ export interface CompleteRequest {
   cacheDocuments?: boolean;
   signal?: AbortSignal;
   onProgress?: (receivedChars: number) => void;
+  /** Statusmeldungen wie „Gemini überlastet – neuer Versuch …“. */
+  onStatus?: (message: string) => void;
 }
 
 export interface Usage {
@@ -44,6 +46,7 @@ export type AIErrorKind =
   | "auth"
   | "rate_limit"
   | "overloaded"
+  | "server"
   | "refusal"
   | "truncated"
   | "too_large"
@@ -56,6 +59,8 @@ export class AIError extends Error {
     public readonly kind: AIErrorKind,
     message: string,
     public readonly retryAfterSeconds?: number,
+    /** Original-Fehlermeldung des Anbieters (für die Fehlersuche). */
+    public readonly detail?: string,
   ) {
     super(message);
     this.name = "AIError";

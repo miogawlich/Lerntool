@@ -38,13 +38,11 @@ export function StudyPage() {
   }, [courseId, mode, topicId]);
 
   if (!queue) return <main className="page">Lädt …</main>;
-  const back = <Link to={`/course/${courseId}`} className="crumb small">← zum Kurs</Link>;
 
   if (pos >= queue.length) {
     const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
     return (
       <main className="page stack">
-        {back}
         <div className="card stack" data-testid="session-done">
           <h1>{queue.length ? "Geschafft! 🎉" : "Gerade nichts zu tun"}</h1>
           {queue.length ? (
@@ -70,7 +68,6 @@ export function StudyPage() {
 
   return (
     <main className="page">
-      {back}
       <ErrorBanner />
       <div className="study-head">
         <div className="row">

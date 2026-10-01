@@ -159,3 +159,14 @@ details > summary { cursor: pointer; font-weight: 600; min-height: 36px; display
 .ink-canvas { display: block; width: 100%; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; background-image: radial-gradient(#d6d9e0 1px, transparent 1px); background-size: 24px 24px; }
 .width-preview { display: inline-block; background: currentColor; border-radius: 99px; width: 18px; }
 input[type="range"] { width: 120px; }
+
+/* Zurück-Button in der Kopfleiste */
+.back-btn { min-height: 44px; padding: 8px 16px 8px 12px; font-weight: 600; gap: 4px; }
+.back-btn .chev { font-size: 1.5rem; line-height: 1; margin-top: -2px; }
+
+/* Kurskarten mit langem Drücken */
+.course-card-wrap { position: relative; }
+.course-card { display: block; text-decoration: none; color: inherit; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: transform 0.15s; }
+.course-card.pressed { transform: scale(0.97); outline: 2px solid var(--bad); }
+.course-card-menu { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 85%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+button.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }

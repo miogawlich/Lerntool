@@ -56,10 +56,7 @@ export function CoursePage() {
   return (
     <main className="page">
       <div className="spread">
-        <div>
-          <Link to="/" className="crumb small">← Kurse</Link>
-          <h1>{course.name}</h1>
-        </div>
+        <h1>{course.name}</h1>
       </div>
       <ErrorBanner />
       <nav className="tabs" role="tablist">

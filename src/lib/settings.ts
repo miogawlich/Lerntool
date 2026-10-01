@@ -12,6 +12,8 @@ export interface Settings {
   gradeProvider: ProviderId;
   geminiKey: string;
   geminiModel: string;
+  /** Beim Verbinden geladene Modellliste (für Ausweichmodelle). */
+  geminiModels: string[];
   claudeKey: string;
   claudeModel: string;
   /** Monatliches Claude-Budget in Euro; 0 = keine Sperre. */
@@ -40,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gradeProvider: "gemini",
   geminiKey: "",
   geminiModel: "",
+  geminiModels: [],
   claudeKey: "",
   claudeModel: DEFAULT_CLAUDE_MODEL,
   claudeMonthlyBudgetEur: 5,

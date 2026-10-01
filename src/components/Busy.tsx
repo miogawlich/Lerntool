@@ -10,6 +10,8 @@ interface BusyApi {
   /** Führt eine (KI-)Aktion mit Overlay, Abbrechen-Knopf und Fehleranzeige aus. */
   run<T>(label: string, fn: (ctx: { signal: AbortSignal; progress: (step: string, chars?: number) => void }) => Promise<T>): Promise<T | undefined>;
   error: string | null;
+  /** Technische Details (z. B. Original-Fehlermeldung von Google). */
+  errorDetail: string | null;
   clearError(): void;
 }
 
@@ -28,18 +30,21 @@ export function errorMessage(e: unknown): string {
 export function BusyProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<BusyState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const ctrl = useRef<AbortController | null>(null);
 
   const run = useCallback<BusyApi["run"]>(async (label, fn) => {
     const c = new AbortController();
     ctrl.current = c;
     setError(null);
+    setErrorDetail(null);
     setState({ step: label });
     try {
       return await fn({ signal: c.signal, progress: (step, chars) => setState({ step, chars }) });
     } catch (e) {
       console.error(e);
       setError(errorMessage(e));
+      setErrorDetail(e instanceof AIError && e.detail ? e.detail : null);
       return undefined;
     } finally {
       setState(null);
@@ -48,7 +53,7 @@ export function BusyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ run, error, clearError: () => setError(null) }}>
+    <Ctx.Provider value={{ run, error, errorDetail, clearError: () => { setError(null); setErrorDetail(null); } }}>
       {children}
       {state && (
         <div className="overlay" role="dialog" aria-live="polite">
@@ -71,12 +76,20 @@ export function useBusy(): BusyApi {
 }
 
 export function ErrorBanner() {
-  const { error, clearError } = useBusy();
+  const { error, errorDetail, clearError } = useBusy();
   if (!error) return null;
   return (
-    <div className="notice error spread" role="alert" style={{ marginBottom: 14 }}>
-      <span>{error}</span>
-      <button className="small ghost" onClick={clearError} aria-label="Fehler schließen">✕</button>
+    <div className="notice error" role="alert" style={{ marginBottom: 14 }}>
+      <div className="spread">
+        <span style={{ flex: 1 }}>{error}</span>
+        <button className="small ghost" onClick={clearError} aria-label="Fehler schließen">✕</button>
+      </div>
+      {errorDetail && (
+        <details className="small" style={{ marginTop: 6 }}>
+          <summary>Technische Details (zum Weitergeben)</summary>
+          <code data-testid="error-detail" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", userSelect: "all" }}>{errorDetail}</code>
+        </details>
+      )}
     </div>
   );
 }
