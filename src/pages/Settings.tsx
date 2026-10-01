@@ -263,6 +263,9 @@ export function SettingsPage() {
           </label>
         </div>
       </section>
+      <p className="muted small" data-testid="app-version">
+        App-Version: {new Date(__BUILD_TIME__).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })} – Updates werden automatisch geladen.
+      </p>
     </main>
   );
 }

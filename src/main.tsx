@@ -7,12 +7,26 @@ import { CoursePage } from "./pages/Course";
 import { StudyPage } from "./pages/Study";
 import { SettingsPage } from "./pages/Settings";
 import { refreshRateIfStale } from "./lib/currency";
+import { initUpdates, updateNow, useUpdateAvailable } from "./lib/updates";
 import "./styles.css";
 
 // Daten möglichst vor automatischem Löschen durch Safari schützen.
 void navigator.storage?.persist?.().catch(() => undefined);
 // Euro-Umrechnung aktuell halten (EZB-Kurs, höchstens einmal täglich).
 void refreshRateIfStale();
+// Neue App-Versionen automatisch laden (kein Neuinstallieren nötig).
+initUpdates();
+
+function UpdateBanner() {
+  const available = useUpdateAvailable();
+  if (!available) return null;
+  return (
+    <div className="notice spread" style={{ borderRadius: 0 }} role="status">
+      <span>Eine neue Version des Lerntools ist da.</span>
+      <button className="small primary" onClick={updateNow}>Jetzt aktualisieren</button>
+    </div>
+  );
+}
 
 /** Großer Zurück-Button in der fixierten Kopfleiste (auf allen Unterseiten). */
 function BackButton() {
@@ -36,6 +50,7 @@ function App() {
         <span className="spacer" />
         <Link to="/settings" className="btn small ghost" aria-label="Einstellungen">⚙️ Einstellungen</Link>
       </header>
+      <UpdateBanner />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/course/:courseId" element={<CoursePage />} />

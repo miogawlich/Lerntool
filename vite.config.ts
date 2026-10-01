@@ -7,10 +7,14 @@ const base = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base,
+  define: {
+    // Build-Zeitpunkt, in den Einstellungen sichtbar (zeigt, ob das Update angekommen ist)
+    __BUILD_TIME__: JSON.stringify(process.env.BUILD_TIME ?? new Date().toISOString()),
+  },
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       includeAssets: ["icon.svg", "apple-touch-icon.png"],
       manifest: {
         name: "Lerntool",
