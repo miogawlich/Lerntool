@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { ProviderId } from "./ai/types";
-import { DEFAULT_CLAUDE_MODEL } from "./ai/claude";
+import { DEFAULT_CLAUDE_MODEL } from "./ai/models";
 
 export interface Settings {
   provider: ProviderId;

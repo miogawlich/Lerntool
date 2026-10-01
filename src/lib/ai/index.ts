@@ -1,13 +1,18 @@
 import { db } from "../db";
 import { getSettings } from "../settings";
-import { ClaudeBackend, claudeCostUsd } from "./claude";
-import { GeminiBackend } from "./gemini";
+import { claudeCostUsd } from "./models";
 import type { CallOptions } from "./service";
 import type { LLMBackend, Usage } from "./types";
 
-export function getBackend(): LLMBackend {
+/** Lädt das SDK des gewählten Anbieters erst bei Bedarf (kleinerer Start-Download auf dem iPad). */
+export async function getBackend(): Promise<LLMBackend> {
   const s = getSettings();
-  return s.provider === "claude" ? new ClaudeBackend(s.claudeKey, s.claudeModel) : new GeminiBackend(s.geminiKey, s.geminiModel);
+  if (s.provider === "claude") {
+    const { ClaudeBackend } = await import("./claude");
+    return new ClaudeBackend(s.claudeKey, s.claudeModel);
+  }
+  const { GeminiBackend } = await import("./gemini");
+  return new GeminiBackend(s.geminiKey, s.geminiModel);
 }
 
 export async function recordUsage(usage: Usage, model: string, purpose: string) {
