@@ -10,15 +10,29 @@ interface GenerateClient {
 }
 
 export interface GeminiOptions {
-  /** Ausweichmodelle, falls das gewählte Modell dauerhaft überlastet ist. */
+  /** Ausweichmodelle, falls das gewählte Modell überlastet, limitiert oder nicht verfügbar ist. */
   fallbackModels?: string[];
   client?: GenerateClient;
-  /** Wartezeiten vor Wiederholversuchen in ms (bei Überlastung). */
+  /** Wartezeiten in ms zwischen zwei Runden über alle Modelle. */
   retryDelaysMs?: number[];
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  now?: () => number;
 }
 
-const RETRYABLE = new Set(["overloaded", "server"]);
+/** Fehler, bei denen ein anderes Modell (oder ein späterer Versuch) helfen kann. */
+const RETRYABLE = new Set(["overloaded", "server", "rate_limit", "model_unavailable"]);
+/** Wie lange ein Ausweichmodell, das funktioniert hat, bevorzugt wird. */
+const STICKY_MS = 15 * 60_000;
+
+// Gilt für alle Backend-Instanzen der Sitzung (die App erzeugt pro Aufruf ein neues Backend).
+let preferred: { primary: string; model: string; until: number } | undefined;
+const unavailable = new Set<string>();
+
+/** Nur für Tests. */
+export function resetGeminiState() {
+  preferred = undefined;
+  unavailable.clear();
+}
 
 function sleepFor(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -38,6 +52,7 @@ export class GeminiBackend implements LLMBackend {
   private fallbacks: string[];
   private delays: number[];
   private sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  private now: () => number;
 
   constructor(
     apiKey: string,
@@ -48,33 +63,69 @@ export class GeminiBackend implements LLMBackend {
     if (!model) throw new AIError("other", "Kein Gemini-Modell gewählt. Bitte in den Einstellungen ein Modell auswählen.");
     // Wiederholversuche steuern wir selbst (sichtbar im Fortschritt, mit Ausweichmodell).
     this.ai = opts.client ?? new GoogleGenAI({ apiKey, httpOptions: { retryOptions: { attempts: 1 } } });
-    this.fallbacks = (opts.fallbackModels ?? []).filter((m) => m !== model).slice(0, 2);
-    this.delays = opts.retryDelaysMs ?? [2_000, 6_000];
+    this.fallbacks = [...new Set(opts.fallbackModels ?? [])].filter((m) => m !== model);
+    this.delays = opts.retryDelaysMs ?? [3_000, 10_000, 20_000];
     this.sleep = opts.sleep ?? sleepFor;
+    this.now = opts.now ?? Date.now;
   }
 
+  /** Reihenfolge der Modelle: zuletzt bewährtes Ausweichmodell zuerst, nicht verfügbare raus. */
+  private chain(): string[] {
+    const all = [this.model, ...this.fallbacks];
+    const p = preferred;
+    if (p && p.primary === this.model && p.until > this.now() && all.includes(p.model)) {
+      all.splice(all.indexOf(p.model), 1);
+      all.unshift(p.model);
+    }
+    return all.filter((m) => !unavailable.has(m));
+  }
+
+  /**
+   * Google meldet bei Überlastung 503, oft nur für einzelne Modelle und nur kurz.
+   * Deshalb pro Runde jedes Modell einmal versuchen (gewähltes zuerst) und erst
+   * zwischen den Runden warten, statt lange am selben Modell zu hängen.
+   */
   async complete(req: CompleteRequest): Promise<CompleteResponse> {
-    const models = [this.model, ...this.fallbacks];
     let lastErr: unknown;
-    for (let m = 0; m < models.length; m++) {
-      const model = models[m];
-      if (m > 0) req.onStatus?.(`${models[m - 1]} ist überlastet – weiche auf ${model} aus …`);
-      for (let attempt = 0; attempt <= this.delays.length; attempt++) {
+    let rateLimited: unknown;
+    let serverErrors = 0;
+    for (let round = 0; round <= this.delays.length; round++) {
+      const models = this.chain();
+      if (!models.length) break;
+      let overloadedThisRound = false;
+      for (let i = 0; i < models.length; i++) {
+        const model = models[i];
         try {
-          return await this.once(model, req);
+          const res = await this.once(model, req);
+          if (model !== this.model) preferred = { primary: this.model, model, until: this.now() + STICKY_MS };
+          else if (preferred?.primary === this.model) preferred = undefined;
+          return res;
         } catch (e) {
-          lastErr = e;
           const kind = e instanceof AIError ? e.kind : "";
           if (!RETRYABLE.has(kind) || req.signal?.aborted) throw e;
-          if (attempt < this.delays.length) {
-            const wait = this.delays[attempt];
-            req.onStatus?.(`Gemini antwortet gerade nicht (${(e as AIError).detail?.slice(0, 60) ?? kind}) – neuer Versuch in ${Math.round(wait / 1000)} s …`);
-            await this.sleep(wait, req.signal);
+          if (kind === "model_unavailable") unavailable.add(model);
+          else if (kind === "rate_limit") rateLimited = e;
+          else {
+            lastErr = e;
+            overloadedThisRound = true;
+            // Interne Fehler (500) kommen meist von zu großem Material: nur einmal wiederholen,
+            // danach teilt die Analyse das Material auf.
+            if (kind === "server" && ++serverErrors >= 2) throw e;
           }
+          const next = models[i + 1];
+          if (next) req.onStatus?.(`${model}: ${shortReason(e as AIError)} – weiche auf ${next} aus …`);
         }
       }
+      // Nur Limits/nicht verfügbare Modelle: Warten hilft hier nicht.
+      if (!overloadedThisRound) break;
+      if (round < this.delays.length) {
+        const wait = this.delays[round];
+        req.onStatus?.(`Gemini ist gerade überlastet – neuer Versuch in ${Math.round(wait / 1000)} s (${round + 2}/${this.delays.length + 1}) …`);
+        await this.sleep(wait, req.signal);
+      }
     }
-    throw lastErr;
+    // Waren alle Modelle nur limitiert, ist das die hilfreichere Meldung.
+    throw lastErr ?? rateLimited ?? new AIError("model_unavailable", `Keines der Gemini-Modelle ist verfügbar. Bitte in den Einstellungen neu verbinden.`);
   }
 
   private async once(model: string, req: CompleteRequest): Promise<CompleteResponse> {
@@ -121,6 +172,13 @@ export class GeminiBackend implements LLMBackend {
   }
 }
 
+function shortReason(e: AIError): string {
+  if (e.kind === "rate_limit") return "Limit erreicht";
+  if (e.kind === "model_unavailable") return "nicht verfügbar";
+  if (e.kind === "server") return "interner Fehler";
+  return "überlastet";
+}
+
 /** Kurzfassung der Google-Fehlermeldung (die oft als JSON-String kommt). */
 function googleMessage(e: { message?: string }): string {
   const raw = e.message ?? "";
@@ -150,6 +208,8 @@ export function mapGeminiError(e: unknown): unknown {
         detail,
       );
     }
+    if (e.status === 404)
+      return new AIError("model_unavailable", "Das gewählte Gemini-Modell ist nicht (mehr) verfügbar. Bitte in den Einstellungen neu verbinden und ein anderes Modell wählen.", undefined, detail);
     if (e.status === 413 || /too large|exceeds|payload size/i.test(msg))
       return new AIError("too_large", "Das Material ist zu groß für eine Anfrage. Bitte PDFs aufteilen.", undefined, detail);
     if (e.status === 503 || e.status === 504)
@@ -199,15 +259,22 @@ export function pickDefaultGeminiModel(ids: string[]): string | undefined {
   return [...ids].sort((a, b) => rank(b) - rank(a))[0];
 }
 
-/** Ausweichmodelle: andere stabile Flash-Modelle, neueste zuerst. */
-export function pickFallbackModels(ids: string[], current: string): string[] {
+/**
+ * Ausweichmodelle: andere stabile Flash-Modelle, neueste zuerst, Lite-Varianten zuletzt.
+ * Bei Überlastung trifft es meist nur einzelne Modelle, daher lieber mehrere Kandidaten.
+ */
+export function pickFallbackModels(ids: string[], current: string, max = 4): string[] {
   const stable = ids.filter((id) => id !== current && /flash/.test(id) && !/(preview|exp|latest)/.test(id));
-  const out: string[] = [];
-  let rest = stable;
-  while (rest.length && out.length < 2) {
-    const best = pickDefaultGeminiModel(rest)!;
-    out.push(best);
-    rest = rest.filter((x) => x !== best);
-  }
-  return out;
+  const byRank = (list: string[]) => {
+    const out: string[] = [];
+    let rest = list;
+    while (rest.length) {
+      const best = pickDefaultGeminiModel(rest)!;
+      out.push(best);
+      rest = rest.filter((x) => x !== best);
+    }
+    return out;
+  };
+  const lite = (id: string) => /lite/.test(id);
+  return [...byRank(stable.filter((id) => !lite(id))), ...byRank(stable.filter(lite))].slice(0, max);
 }

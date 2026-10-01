@@ -9,7 +9,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { analyzeDocuments, generateItems, gradeAnswer, type DocInput } from "../src/lib/ai/service";
 import { ClaudeBackend } from "../src/lib/ai/claude";
-import { GeminiBackend, listGeminiModels, pickDefaultGeminiModel } from "../src/lib/ai/gemini";
+import { GeminiBackend, listGeminiModels, pickDefaultGeminiModel, pickFallbackModels } from "../src/lib/ai/gemini";
 import { claudeCostUsd } from "../src/lib/ai/models";
 import type { LLMBackend, Usage } from "../src/lib/ai/types";
 
@@ -52,7 +52,8 @@ async function run(label: string, backend: LLMBackend) {
   console.log(`\n=== ${label} (${backend.model}) – ${docs.length} PDF(s): ${docs.map((d) => `${d.name} [${d.kind}]`).join(", ")}`);
 
   let t = Date.now();
-  const analysis = await analyzeDocuments(backend, "Live-Test", docs, [], { onUsage });
+  const onProgress = ({ step }: { step: string }) => /weiche|Versuch/.test(step) && console.log(`  … ${step}`);
+  const analysis = await analyzeDocuments(backend, "Live-Test", docs, [], { onUsage, onProgress });
   console.log(`Analyse (${((Date.now() - t) / 1000).toFixed(1)} s): Fach „${analysis.subject}“, ${analysis.topics.length} Themen`);
   console.log(`  Mix: ${JSON.stringify(analysis.recommendedMix)} – ${analysis.mixReasoning}`);
   for (const tp of analysis.topics.slice(0, 8)) console.log(`  • ${tp.name} [${tp.examRelevance}] ${tp.examPatterns.slice(0, 90)}`);
@@ -60,7 +61,7 @@ async function run(label: string, backend: LLMBackend) {
 
   t = Date.now();
   const specs = analysis.topics.slice(0, 2).map((topic) => ({ topic, count: 4, existingPrompts: [] }));
-  const items = await generateItems(backend, "Live-Test", specs, analysis.recommendedMix, docs, { onUsage });
+  const items = await generateItems(backend, "Live-Test", specs, analysis.recommendedMix, docs, { onUsage, onProgress });
   console.log(`Generierung (${((Date.now() - t) / 1000).toFixed(1)} s): ${items.length} Aufgaben`);
   const types = new Map<string, number>();
   items.forEach((i) => types.set(i.type, (types.get(i.type) ?? 0) + 1));
@@ -93,7 +94,11 @@ if (process.env.GEMINI_API_KEY) {
   const models = await listGeminiModels(key);
   const model = process.env.GEMINI_MODEL || pickDefaultGeminiModel(models.map((m) => m.id))!;
   console.log(`Gemini-Modelle: ${models.map((m) => m.id).join(", ")}`);
-  await run("Gemini", new GeminiBackend(key, model));
+  // Wie in der App: mit Ausweichmodellen; Status-Meldungen sichtbar machen.
+  const ids = models.map((m) => m.id);
+  const fallbackModels = pickFallbackModels(ids, model);
+  console.log(`Gemini: ${model}, Ausweichmodelle: ${fallbackModels.join(", ")}`);
+  await run("Gemini", new GeminiBackend(key, model, { fallbackModels }));
   ran++;
 }
 if (process.env.ANTHROPIC_API_KEY) {

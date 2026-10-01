@@ -46,6 +46,7 @@ export type AIErrorKind =
   | "auth"
   | "rate_limit"
   | "overloaded"
+  | "model_unavailable"
   | "server"
   | "refusal"
   | "truncated"

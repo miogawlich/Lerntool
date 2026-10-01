@@ -34,9 +34,9 @@ test("Gemini dauerhaft überlastet: Ausweichmodell und am Ende Fehler mit Google
   const log = await mockGemini(page, { failFirstGenerate: 99, failStatus: 503 });
   await page.getByTestId("analyze").click();
   await expect(page.getByRole("alert")).toContainText("überlastet", { timeout: 80_000 });
-  // gewähltes Modell + 2 Ausweichmodelle, je 3 Versuche
-  expect([...new Set(log.generate.map((g) => g.model))]).toEqual(["gemini-3.0-flash", "gemini-2.5-flash"]);
-  expect(log.generate).toHaveLength(6); // 2 Modelle × 3 Versuche
+  // gewähltes Modell + Ausweichmodell, reihum in 4 Runden
+  expect(log.generate.map((g) => g.model).slice(0, 4)).toEqual(["gemini-3.0-flash", "gemini-2.5-flash", "gemini-3.0-flash", "gemini-2.5-flash"]);
+  expect(log.generate).toHaveLength(8); // 2 Modelle × 4 Runden
   await page.getByText("Technische Details").click();
   await expect(page.getByTestId("error-detail")).toHaveText("HTTP 503: The model is overloaded. Please try again later.");
   await shot(page, "14-fehler-details");
