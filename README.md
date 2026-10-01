@@ -1,3 +1,5 @@
+**[➡️ zur Seite](https://miogawlich.github.io/Lerntool/)**
+
 # Lerntool
 
 KI-gestützte Lern-App fürs Studium, optimiert fürs iPad mit Apple Pencil. Sie läuft als Web-App (PWA) in Safari.
