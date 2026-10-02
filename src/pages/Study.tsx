@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Rating, type Grade } from "ts-fsrs";
 import { ErrorBanner, useBusy } from "../components/Busy";
@@ -227,8 +227,10 @@ function OpenAnswer({ item, onDone }: { item: Item; onDone: (s: number) => void 
           </div>
         </>
       )}
-      {phase.kind === "self" && <SelfGrade item={item} onSave={(score, errorType) => save({ score, mode: "self", errorType })} />}
-      {phase.kind === "ai" && <AiResult item={item} result={phase.result} onSave={save} />}
+      {phase.kind === "self" && (
+        <SelfGrade item={item} answer={<YourAnswer text={text} image={image.current?.blob} />} onSave={(score, errorType) => save({ score, mode: "self", errorType })} />
+      )}
+      {phase.kind === "ai" && <AiResult item={item} result={phase.result} answer={<YourAnswer text={text} image={image.current?.blob} />} onSave={save} />}
     </div>
   );
 }
@@ -242,7 +244,21 @@ function Solution({ item }: { item: Item }) {
   );
 }
 
-function SelfGrade({ item, onSave }: { item: Item; onSave: (score: number, errorType?: ErrorType) => void }) {
+/** Die eigene Antwort (getippt und/oder gezeichnet) zum Vergleich mit der Musterlösung. */
+function YourAnswer({ text, image }: { text: string; image?: Blob }) {
+  const url = useMemo(() => (image ? URL.createObjectURL(image) : undefined), [image]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  if (!text.trim() && !url) return null;
+  return (
+    <div className="card stack" data-testid="your-answer">
+      <b>Deine Antwort</b>
+      {text.trim() && <MathText text={text} />}
+      {url && <img src={url} alt="Deine handschriftliche Antwort" style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid var(--border)" }} />}
+    </div>
+  );
+}
+
+function SelfGrade({ item, answer, onSave }: { item: Item; answer: ReactNode; onSave: (score: number, errorType?: ErrorType) => void }) {
   const [hit, setHit] = useState<Set<number>>(new Set());
   const [errorType, setErrorType] = useState<ErrorType>("none");
   const rubric = item.rubric;
@@ -250,6 +266,7 @@ function SelfGrade({ item, onSave }: { item: Item; onSave: (score: number, error
   return (
     <div className="stack">
       <Solution item={item} />
+      {answer}
       {rubric.length > 0 ? (
         <div className="card">
           <b>Was hattest du richtig?</b>
@@ -282,7 +299,7 @@ function SelfGrade({ item, onSave }: { item: Item; onSave: (score: number, error
   );
 }
 
-function AiResult({ item, result, onSave }: { item: Item; result: GradeResult; onSave: (i: AttemptInput) => void }) {
+function AiResult({ item, result, answer, onSave }: { item: Item; result: GradeResult; answer: ReactNode; onSave: (i: AttemptInput) => void }) {
   const cls = result.verdict === "correct" ? "good" : result.verdict === "partial" ? "warn" : "error";
   const base = { feedback: result.feedback, missedConcepts: result.missedConcepts, transcription: result.transcription };
   return (
@@ -305,6 +322,7 @@ function AiResult({ item, result, onSave }: { item: Item; result: GradeResult; o
         <summary>Musterlösung</summary>
         <MathText text={item.answer} />
       </details>
+      {answer}
       <div className="row">
         <button className="primary" onClick={() => onSave({ ...base, score: result.score, mode: "ai", errorType: result.errorType })}>Übernehmen & weiter</button>
         <span className="muted small">Bewertung falsch? Korrigieren:</span>

@@ -92,3 +92,20 @@ test("Radierer entfernt ganze Striche", async ({ page }) => {
   expect(await inkAt(page, 100, 60)).toBe(false);
   expect(await inkAt(page, 100, 120)).toBe(true);
 });
+
+test("Selbst bewerten: eigene Antwort (Text und Zeichnung) steht zwischen Musterlösung und Checkliste", async ({ page }) => {
+  await openCanvas(page);
+  await drawStroke(page, line(40, 60, 300, 60), "pen", 0.5);
+  await page.getByRole("button", { name: "⌨️ Tastatur" }).click();
+  await page.getByLabel("Antwort").fill("Grenzwert ist 2");
+  await page.getByTestId("self-grade").click();
+  const answer = page.getByTestId("your-answer");
+  await expect(answer).toContainText("Grenzwert ist 2");
+  await expect(answer.locator("img")).toBeVisible();
+  // Reihenfolge: Musterlösung → deine Antwort → „Was hattest du richtig?“
+  const order = await page.locator(".solution, [data-testid=your-answer], .card:has(> b:text('Was hattest du richtig?'))").evaluateAll((els) =>
+    els.map((e) => (e.matches(".solution") ? "loesung" : e.matches("[data-testid=your-answer]") ? "antwort" : "checkliste")),
+  );
+  expect(order).toEqual(["loesung", "antwort", "checkliste"]);
+  await shot(page, "15-eigene-antwort");
+});
