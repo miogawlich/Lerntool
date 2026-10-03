@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ErrorBanner, useBusy } from "../components/Busy";
 import { Difficulty } from "../components/Bits";
@@ -14,6 +14,29 @@ import { ERROR_TYPE_LABELS, ERROR_TYPES, ITEM_TYPE_LABELS, type ErrorType, type 
 import { buildSession, type SessionMode } from "../lib/scheduler";
 import { getSettings, hasActiveKey, useSettings } from "../lib/settings";
 
+/**
+ * Zustand der einzelnen Aufgaben einer Sitzung (Entwürfe, Bewertungsphase), damit beim
+ * Hin- und Herblättern nichts verloren geht. Lebt so lange wie die Sitzung.
+ */
+const SessionStore = createContext<Map<string, unknown>>(new Map());
+
+function useStored<T>(key: string, init: T | (() => T)) {
+  const store = useContext(SessionStore);
+  const [value, setValue] = useState<T>(() => (store.has(key) ? (store.get(key) as T) : typeof init === "function" ? (init as () => T)() : init));
+  const current = useRef(value);
+  // Sofort in den Store schreiben: Nach dem Speichern wird oft im selben Zug weitergeblättert.
+  const set = useCallback(
+    (v: T | ((prev: T) => T)) => {
+      const next = typeof v === "function" ? (v as (prev: T) => T)(current.current) : v;
+      current.current = next;
+      store.set(key, next);
+      setValue(next);
+    },
+    [store, key],
+  );
+  return [value, set] as const;
+}
+
 export function StudyPage() {
   const { courseId = "" } = useParams();
   const [params] = useSearchParams();
@@ -22,36 +45,56 @@ export function StudyPage() {
   const [queue, setQueue] = useState<Item[] | null>(null);
   const [topics, setTopics] = useState<Map<string, Topic>>(new Map());
   const [pos, setPos] = useState(0);
-  const [scores, setScores] = useState<number[]>([]);
+  const [results, setResults] = useState<Map<string, number>>(new Map());
+  const [flagged, setFlagged] = useState<Set<string>>(new Set());
+  const [store, setStore] = useState(() => new Map<string, unknown>());
 
   useEffect(() => {
+    setQueue(null);
     (async () => {
       const [items, tps, attempts] = await Promise.all([
         db.items.where("courseId").equals(courseId).toArray(),
         db.topics.where("courseId").equals(courseId).toArray(),
         db.attempts.where("courseId").equals(courseId).toArray(),
       ]);
+      const q = buildSession(items, tps, attempts, { mode, topicId, limit: mode === "all" ? 200 : 20, newLimit: getSettings().newPerSession });
       setTopics(new Map(tps.map((t) => [t.id, t])));
-      setQueue(buildSession(items, tps, attempts, { mode, topicId, limit: mode === "all" ? 200 : 20, newLimit: getSettings().newPerSession }));
+      setFlagged(new Set(q.filter((i) => i.flagged).map((i) => i.id)));
+      setResults(new Map());
+      setStore(new Map());
+      setPos(0);
+      setQueue(q);
     })();
   }, [courseId, mode, topicId]);
 
   if (!queue) return <main className="page">Lädt …</main>;
 
+  const goTo = (p: number) => {
+    setPos(Math.max(0, Math.min(queue.length, p)));
+    window.scrollTo({ top: 0 });
+  };
+
   if (pos >= queue.length) {
+    const scores = [...results.values()];
     const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const firstOpen = queue.findIndex((i) => !results.has(i.id));
     return (
       <main className="page stack">
         <div className="card stack" data-testid="session-done">
-          <h1>{queue.length ? "Geschafft! 🎉" : "Gerade nichts zu tun"}</h1>
+          <h1>{queue.length ? (firstOpen < 0 ? "Geschafft! 🎉" : "Sitzung beenden?") : "Gerade nichts zu tun"}</h1>
           {queue.length ? (
-            <p>{scores.length} Aufgaben bearbeitet, Ø {Math.round(avg * 100)} % richtig.</p>
+            <p>
+              {scores.length} Aufgaben bearbeitet, Ø {Math.round(avg * 100)} % richtig.
+              {firstOpen >= 0 && <> {queue.length - scores.length} noch offen.</>}
+            </p>
           ) : (
             <p className="muted">{mode === "weak" ? "Noch keine Schwächen erkannt – erst ein paar Aufgaben lernen." : "Keine fälligen oder neuen Aufgaben. Erzeuge neue Aufgaben oder komm später wieder."}</p>
           )}
           <div className="row">
-            <Link className="btn primary" to={`/course/${courseId}`}>Zur Kursübersicht</Link>
-            {mode !== "weak" && <Link className="btn" to={`/course/${courseId}/study?mode=weak`} onClick={() => { setQueue(null); setPos(0); setScores([]); }}>🎯 Schwächen üben</Link>}
+            {firstOpen >= 0 && <button className="primary" onClick={() => goTo(firstOpen)}>Offene Aufgaben bearbeiten</button>}
+            {queue.length > 0 && <button onClick={() => goTo(queue.length - 1)}>← Zurück</button>}
+            <Link className={`btn ${firstOpen < 0 ? "primary" : ""}`} to={`/course/${courseId}`}>Zur Kursübersicht</Link>
+            {mode !== "weak" && <Link className="btn" to={`/course/${courseId}/study?mode=weak`}>🎯 Schwächen üben</Link>}
           </div>
         </div>
       </main>
@@ -59,27 +102,156 @@ export function StudyPage() {
   }
 
   const item = queue[pos];
-  const done = (score: number) => {
-    setScores((s) => [...s, score]);
-    setPos((p) => p + 1);
-    window.scrollTo({ top: 0 });
+  const isFlagged = flagged.has(item.id);
+  const toggleFlag = async () => {
+    const next = new Set(flagged);
+    if (isFlagged) next.delete(item.id);
+    else next.add(item.id);
+    setFlagged(next);
+    await db.items.update(item.id, { flagged: !isFlagged });
   };
+  const answered = (score: number) => setResults((r) => new Map(r).set(item.id, score));
+  const next = () => goTo(pos + 1);
+  const flag = <FlagButton flagged={isFlagged} onToggle={toggleFlag} />;
 
   return (
-    <main className="page">
-      <ErrorBanner />
-      <div className="study-head">
-        <div className="row">
-          <span className="badge accent">{ITEM_TYPE_LABELS[item.type]}</span>
-          <Difficulty d={item.difficulty} />
-          <span className="small muted">{topics.get(item.topicId)?.name}</span>
+    <SessionStore.Provider value={store}>
+      <main className="page">
+        <ErrorBanner />
+        <div className="study-head">
+          <div className="row">
+            <span className="badge accent">{ITEM_TYPE_LABELS[item.type]}</span>
+            <Difficulty d={item.difficulty} />
+            <span className="small muted">{topics.get(item.topicId)?.name}</span>
+          </div>
+          <QuestionMenu queue={queue} pos={pos} results={results} flagged={flagged} onSelect={goTo} />
         </div>
-        <span className="small muted" data-testid="progress">{pos + 1} / {queue.length}</span>
+        <div className="bar" style={{ marginBottom: 16 }}><div style={{ width: `${(results.size / queue.length) * 100}%`, background: "var(--accent)" }} /></div>
+        {item.type === "multiple_choice" && <MultipleChoice key={item.id} item={item} flag={flag} onAnswered={answered} onNext={next} />}
+        {(item.type === "short_answer" || item.type === "worked_problem") && <OpenAnswer key={item.id} item={item} flag={flag} onAnswered={answered} onNext={next} />}
+        <nav className="study-nav" aria-label="Zwischen Aufgaben wechseln">
+          <button onClick={() => goTo(pos - 1)} disabled={pos === 0} data-testid="prev">← Vorherige</button>
+          <button onClick={next} data-testid="next">{pos === queue.length - 1 ? "Beenden →" : "Nächste →"}</button>
+        </nav>
+      </main>
+    </SessionStore.Provider>
+  );
+}
+
+function FlagIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style={{ display: "block" }}>
+      <path d="M3.5 15V1.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M3.5 2h9l-2.2 3.5L12.5 9h-9z" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function FlagButton({ flagged, onToggle }: { flagged: boolean; onToggle: () => void }) {
+  return (
+    <button
+      className={`flag-btn ${flagged ? "on" : ""}`}
+      onClick={onToggle}
+      aria-pressed={flagged}
+      aria-label={flagged ? "Markierung entfernen" : "Als schwierig markieren"}
+      title={flagged ? "Markierung entfernen" : "Als schwierig markieren"}
+      data-testid="flag"
+    >
+      <FlagIcon filled={flagged} />
+    </button>
+  );
+}
+
+function QuestionMenu({ queue, pos, results, flagged, onSelect }: { queue: Item[]; pos: number; results: Map<string, number>; flagged: Set<string>; onSelect: (p: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  const select = (p: number) => {
+    setOpen(false);
+    onSelect(p);
+  };
+  const marked = queue.map((it, i) => (flagged.has(it.id) ? i : -1)).filter((i) => i >= 0);
+  const state = (id: string) => {
+    const s = results.get(id);
+    return s === undefined ? "" : s >= 0.85 ? "good" : s >= 0.35 ? "warn" : "bad";
+  };
+  return (
+    <div className="qmenu" ref={ref}>
+      <button className="small" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="true" data-testid="question-menu">
+        <span data-testid="progress">{pos + 1} / {queue.length}</span>
+        {marked.length > 0 && <span className="qmenu-flagcount"><FlagIcon filled />{marked.length}</span>}
+        <span aria-hidden="true">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="qmenu-panel card" role="menu" aria-label="Alle Aufgaben">
+          {marked.length > 0 && (
+            <>
+              <div className="qmenu-title">Markiert</div>
+              <div className="qmenu-flagged">
+                {marked.map((i) => (
+                  <button key={queue[i].id} className="qmenu-flagged-item" role="menuitem" onClick={() => select(i)}>
+                    <span className="flag-mark"><FlagIcon filled /></span>
+                    <b>{i + 1}</b>
+                    <span className="muted">{plainSnippet(queue[i].prompt)}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="qmenu-title">Alle Aufgaben</div>
+          <div className="qmenu-grid">
+            {queue.map((it, i) => (
+              <button
+                key={it.id}
+                role="menuitem"
+                className={`qmenu-num ${state(it.id)} ${i === pos ? "current" : ""}`}
+                onClick={() => select(i)}
+                aria-label={`Aufgabe ${i + 1}${flagged.has(it.id) ? ", markiert" : ""}${results.has(it.id) ? ", bearbeitet" : ""}`}
+                aria-current={i === pos ? "true" : undefined}
+              >
+                {i + 1}
+                {flagged.has(it.id) && <span className="flag-mark"><FlagIcon filled /></span>}
+              </button>
+            ))}
+          </div>
+          <div className="qmenu-legend small muted">
+            <span><i className="dot good" /> richtig</span>
+            <span><i className="dot warn" /> teilweise</span>
+            <span><i className="dot bad" /> falsch</span>
+            <span><i className="dot" /> offen</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Kurzer Klartext-Auszug für das Menü (ohne LaTeX-/Markdown-Zeichen). */
+function plainSnippet(s: string, n = 60) {
+  const t = s.replace(/\$\$?[^$]*\$\$?/g, "…").replace(/[*_#`]/g, "").replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+}
+
+function PromptCard({ item, flag, children }: { item: Item; flag: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="card prompt-card">
+      {flag}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <MathText className="prompt" text={item.prompt} />
+        {children}
       </div>
-      <div className="bar" style={{ marginBottom: 16 }}><div style={{ width: `${(pos / queue.length) * 100}%`, background: "var(--accent)" }} /></div>
-      {item.type === "multiple_choice" && <MultipleChoice key={item.id} item={item} onDone={done} />}
-      {(item.type === "short_answer" || item.type === "worked_problem") && <OpenAnswer key={item.id} item={item} onDone={done} />}
-    </main>
+    </div>
   );
 }
 
@@ -91,10 +263,18 @@ export function scoreMultipleChoice(options: { correct: boolean }[], selected: S
   return Math.max(0, (hits - wrong) / correct.length) * 0.5;
 }
 
-function MultipleChoice({ item, onDone }: { item: Item; onDone: (s: number) => void }) {
+interface TaskProps {
+  item: Item;
+  flag: ReactNode;
+  /** Ergebnis wurde gespeichert (zählt für die Sitzung). */
+  onAnswered: (score: number) => void;
+  onNext: () => void;
+}
+
+function MultipleChoice({ item, flag, onAnswered, onNext }: TaskProps) {
   const multi = item.options.filter((o) => o.correct).length > 1;
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [checked, setChecked] = useState(false);
+  const [selected, setSelected] = useStored<Set<number>>(`${item.id}:selected`, () => new Set());
+  const [checked, setChecked] = useStored(`${item.id}:checked`, false);
   const score = scoreMultipleChoice(item.options, selected);
   const toggle = (i: number) => {
     if (checked) return;
@@ -106,13 +286,13 @@ function MultipleChoice({ item, onDone }: { item: Item; onDone: (s: number) => v
   const check = async () => {
     setChecked(true);
     await recordAttempt(item, { score, mode: "auto", errorType: score === 1 ? "none" : "concept" });
+    onAnswered(score);
   };
   return (
     <div className="stack">
-      <div className="card">
-        <MathText className="prompt" text={item.prompt} />
+      <PromptCard item={item} flag={flag}>
         {multi && <p className="small muted">Mehrere Antworten können richtig sein.</p>}
-      </div>
+      </PromptCard>
       <div className="mc-options">
         {item.options.map((o, i) => {
           const cls = checked ? (o.correct ? "correct" : selected.has(i) ? "wrong" : "") : selected.has(i) ? "selected" : "";
@@ -130,28 +310,29 @@ function MultipleChoice({ item, onDone }: { item: Item; onDone: (s: number) => v
         <div className="stack">
           <div className={`notice ${score === 1 ? "good" : score > 0 ? "warn" : "error"}`}>{score === 1 ? "Richtig!" : score > 0 ? "Teilweise richtig." : "Leider falsch."}</div>
           {item.answer && <div className="solution"><MathText text={item.answer} /></div>}
-          <button className="primary" onClick={() => onDone(score)}>Weiter</button>
+          <button className="primary" onClick={onNext}>Weiter</button>
         </div>
       )}
     </div>
   );
 }
 
-type Phase = { kind: "answer" } | { kind: "self" } | { kind: "ai"; result: GradeResult };
+type Phase = { kind: "answer" } | { kind: "self" } | { kind: "ai"; result: GradeResult } | { kind: "done"; input: AttemptInput };
 
-function OpenAnswer({ item, onDone }: { item: Item; onDone: (s: number) => void }) {
+function OpenAnswer({ item, flag, onAnswered, onNext }: TaskProps) {
   const settings = useSettings();
   const busy = useBusy();
-  const [input, setInput] = useState<"ink" | "text">(item.type === "worked_problem" ? "ink" : "text");
-  const [text, setText] = useState("");
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [phase, setPhase] = useState<Phase>({ kind: "answer" });
-  const image = useRef<{ base64: string; blob: Blob } | null>(null);
+  const [input, setInput] = useStored<"ink" | "text">(`${item.id}:input`, item.type === "worked_problem" ? "ink" : "text");
+  const [text, setText] = useStored(`${item.id}:text`, "");
+  const [strokes, setStrokes] = useStored<Stroke[]>(`${item.id}:strokes`, []);
+  const [phase, setPhase] = useStored<Phase>(`${item.id}:phase`, { kind: "answer" });
+  const [image, setImage] = useStored<{ base64: string; blob: Blob } | null>(`${item.id}:image`, null);
   const empty = !text.trim() && !strokes.length;
 
   const snapshot = async () => {
-    image.current = strokes.length ? await exportStrokesPng(strokes) : null;
-    return image.current;
+    const img = strokes.length ? await exportStrokesPng(strokes) : null;
+    setImage(img);
+    return img;
   };
 
   const aiGrade = () =>
@@ -162,15 +343,16 @@ function OpenAnswer({ item, onDone }: { item: Item; onDone: (s: number) => void 
     });
 
   const save = async (input: AttemptInput) => {
-    await recordAttempt(item, { ...input, answerText: text || undefined, answerImage: image.current?.blob });
-    onDone(input.score);
+    await recordAttempt(item, { ...input, answerText: text || undefined, answerImage: image?.blob });
+    setPhase({ kind: "done", input });
+    onAnswered(input.score);
+    onNext();
   };
+  const yourAnswer = <YourAnswer text={text} image={image?.blob} />;
 
   return (
     <div className="stack">
-      <div className="card">
-        <MathText className="prompt" text={item.prompt} />
-      </div>
+      <PromptCard item={item} flag={flag} />
       {phase.kind === "answer" && (
         <>
           <div className="row">
@@ -194,9 +376,26 @@ function OpenAnswer({ item, onDone }: { item: Item; onDone: (s: number) => void 
         </>
       )}
       {phase.kind === "self" && (
-        <SelfGrade item={item} answer={<YourAnswer text={text} image={image.current?.blob} />} onSave={(score, errorType) => save({ score, mode: "self", errorType })} />
+        <SelfGrade item={item} answer={yourAnswer} onSave={(score, errorType) => save({ score, mode: "self", errorType })} />
       )}
-      {phase.kind === "ai" && <AiResult item={item} result={phase.result} answer={<YourAnswer text={text} image={image.current?.blob} />} onSave={save} />}
+      {phase.kind === "ai" && <AiResult item={item} result={phase.result} answer={yourAnswer} onSave={save} />}
+      {phase.kind === "done" && <Saved item={item} input={phase.input} answer={yourAnswer} onNext={onNext} />}
+    </div>
+  );
+}
+
+/** Bereits bewertete Aufgabe beim Zurückblättern: Ergebnis statt erneuter Abgabe. */
+function Saved({ item, input, answer, onNext }: { item: Item; input: AttemptInput; answer: ReactNode; onNext: () => void }) {
+  const cls = input.score >= 0.85 ? "good" : input.score >= 0.35 ? "warn" : "error";
+  return (
+    <div className="stack" data-testid="saved-result">
+      <div className={`notice ${cls}`}>
+        <b>Bereits bewertet: {Math.round(input.score * 100)} %</b>
+        {input.feedback && <MathText text={input.feedback} />}
+      </div>
+      <Solution item={item} />
+      {answer}
+      <button className="primary" onClick={onNext}>Weiter</button>
     </div>
   );
 }

@@ -62,6 +62,8 @@ export interface Item extends Omit<GeneratedItem, "topicName"> {
   /** Index-Feld: Fälligkeit (für schnelle Abfragen). */
   due: number;
   suspended?: boolean;
+  /** Von der/dem Lernenden als schwierig markiert (rote Flagge). */
+  flagged?: boolean;
 }
 
 export type GradeMode = "auto" | "self" | "ai";

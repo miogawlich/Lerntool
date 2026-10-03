@@ -134,6 +134,58 @@ label.check input { width: 22px; height: 22px; }
 /* Lernen */
 .study-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .prompt { font-size: 1.15rem; }
+.prompt-card { display: flex; gap: 10px; align-items: flex-start; }
+
+/* Flagge für schwierige Aufgaben */
+.flag-btn {
+  flex: none; min-height: 34px; width: 34px; padding: 0; margin: -4px 0 0 -6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border-color: transparent; color: var(--muted);
+}
+.flag-btn:hover:not(:disabled) { border-color: var(--border); color: var(--bad); }
+.flag-btn.on { color: var(--bad); background: var(--bad-soft); }
+.flag-mark { color: var(--bad); display: inline-flex; }
+
+/* Aufgabenmenü oben rechts */
+.qmenu { position: relative; margin-left: auto; }
+.qmenu > button { gap: 8px; font-variant-numeric: tabular-nums; }
+.qmenu-flagcount { display: inline-flex; align-items: center; gap: 2px; color: var(--bad); font-size: 0.85rem; }
+.qmenu-flagcount svg { width: 13px; height: 13px; }
+.qmenu-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 15;
+  width: min(340px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow-y: auto; padding: 14px;
+}
+.qmenu-title { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 2px 0 8px; }
+.qmenu-title:not(:first-child) { margin-top: 14px; }
+.qmenu-flagged { display: flex; flex-direction: column; gap: 4px; }
+.qmenu-flagged-item {
+  justify-content: flex-start; gap: 8px; min-height: 38px; padding: 6px 10px; text-align: left;
+  border-color: transparent; background: var(--bad-soft);
+}
+.qmenu-flagged-item .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
+.qmenu-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.qmenu-num { position: relative; min-height: 40px; padding: 0; font-variant-numeric: tabular-nums; }
+.qmenu-num.good { background: var(--good-soft); border-color: transparent; color: var(--good); }
+.qmenu-num.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.qmenu-num.bad { background: var(--bad-soft); border-color: transparent; color: var(--bad); }
+.qmenu-num.current { outline: 2px solid var(--accent); outline-offset: 1px; font-weight: 700; }
+.qmenu-num .flag-mark { position: absolute; top: 2px; right: 2px; }
+.qmenu-num .flag-mark svg { width: 11px; height: 11px; }
+.qmenu-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; }
+.qmenu-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); vertical-align: middle; margin-right: 3px; }
+.qmenu-legend .dot.good { background: var(--good-soft); border-color: var(--good); }
+.qmenu-legend .dot.warn { background: var(--warn-soft); border-color: var(--warn); }
+.qmenu-legend .dot.bad { background: var(--bad-soft); border-color: var(--bad); }
+
+/* Vor/Zurück unten */
+.study-nav {
+  position: sticky; bottom: 0; z-index: 10; margin: 20px -20px 0; padding: 10px 20px calc(10px + env(safe-area-inset-bottom));
+  display: flex; justify-content: space-between; gap: 10px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.6) blur(12px); -webkit-backdrop-filter: saturate(1.6) blur(12px);
+  border-top: 1px solid var(--border);
+}
+.study-nav button { flex: 1; max-width: 220px; }
 .prompt .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
 .mc-options { display: flex; flex-direction: column; gap: 10px; }
 .mc-option { text-align: left; justify-content: flex-start; padding: 14px 16px; min-height: 56px; width: 100%; flex-direction: column; align-items: stretch; }

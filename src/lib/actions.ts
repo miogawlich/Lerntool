@@ -183,7 +183,8 @@ export async function recordAttempt(item: Item, input: AttemptInput, database: L
       at: now.getTime(),
       ...input,
     });
-    await database.items.put(updated);
+    // Nur Lernstand schreiben, damit zwischenzeitliche Änderungen (z. B. Markierung) erhalten bleiben.
+    await database.items.update(item.id, { card, due: card.due });
   });
   return updated;
 }
