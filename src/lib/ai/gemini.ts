@@ -204,7 +204,12 @@ export function mapGeminiError(e: unknown): unknown {
     if (e.status === 401 || e.status === 403) return new AIError("auth", "Der Gemini-API-Key ist ungültig oder hat keine Berechtigung.", undefined, detail);
     if (e.status === 429) {
       if (/PerDay/i.test(msg))
-        return new AIError("rate_limit", "Tageslimit der kostenlosen Gemini-Stufe für dieses Modell erreicht. Morgen geht es wieder – oder in den Einstellungen ein anderes Modell wählen.", undefined, detail);
+        return new AIError(
+          "rate_limit",
+          `Tageslimit der kostenlosen Gemini-Stufe erreicht (auch bei den Ausweichmodellen). Das Kontingent wird ${formatQuotaReset(nextQuotaReset())} zurückgesetzt. Bis dahin: selbst bewerten, in den Einstellungen ein „Flash-Lite“-Modell wählen (größeres Kontingent) oder Claude nutzen.`,
+          undefined,
+          detail,
+        );
       const m = msg.match(/retry in ([\d.]+)s/i) ?? msg.match(/"retryDelay":\s*"(\d+)s"/);
       const secs = m ? Math.ceil(Number(m[1])) : undefined;
       return new AIError(
@@ -233,6 +238,24 @@ export function mapGeminiError(e: unknown): unknown {
   return e;
 }
 
+/**
+ * Die Tageskontingente der Gemini-API werden um Mitternacht pazifischer Zeit zurückgesetzt
+ * (in Deutschland 9:00 Uhr, bei abweichender Sommerzeit-Umstellung kurzzeitig 8:00 Uhr).
+ */
+export function nextQuotaReset(now = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(now);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  // Manche Engines liefern um Mitternacht „24“ statt „00“.
+  const elapsed = ((get("hour") % 24) * 3600 + get("minute") * 60 + get("second")) * 1000 + now.getMilliseconds();
+  return new Date(now.getTime() + 86_400_000 - elapsed);
+}
+
+export function formatQuotaReset(at: Date, now = new Date()): string {
+  const time = at.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const sameDay = at.toDateString() === now.toDateString();
+  return `${sameDay ? "heute" : "morgen"} um ${time} Uhr`;
+}
+
 export interface GeminiModelInfo {
   id: string;
   label: string;
@@ -257,35 +280,4 @@ export async function listGeminiModels(apiKey: string): Promise<GeminiModelInfo[
   return out;
 }
 
-/** Wählt ein sinnvolles Standardmodell: neueste „flash“-Version (gutes Free-Tier-Kontingent), sonst neuestes „pro“. */
-export function pickDefaultGeminiModel(ids: string[]): string | undefined {
-  const version = (id: string) => {
-    const m = id.match(/gemini-(\d+(?:\.\d+)?)/);
-    return m ? Number(m[1]) : 0;
-  };
-  const stable = (id: string) => !/(preview|exp|latest)/.test(id);
-  // Stabile Modelle zuerst (Previews sind im Free Tier oft überlastet), dann neueste Version, dann Flash vor Pro.
-  const rank = (id: string) =>
-    (stable(id) ? 100_000 : 0) + version(id) * 100 + (/flash/.test(id) && !/lite/.test(id) ? 5 : /pro/.test(id) ? 2 : /lite/.test(id) ? 1 : 0);
-  return [...ids].sort((a, b) => rank(b) - rank(a))[0];
-}
-
-/**
- * Ausweichmodelle: andere stabile Flash-Modelle, neueste zuerst, Lite-Varianten zuletzt.
- * Bei Überlastung trifft es meist nur einzelne Modelle, daher lieber mehrere Kandidaten.
- */
-export function pickFallbackModels(ids: string[], current: string, max = 4): string[] {
-  const stable = ids.filter((id) => id !== current && /flash/.test(id) && !/(preview|exp|latest)/.test(id));
-  const byRank = (list: string[]) => {
-    const out: string[] = [];
-    let rest = list;
-    while (rest.length) {
-      const best = pickDefaultGeminiModel(rest)!;
-      out.push(best);
-      rest = rest.filter((x) => x !== best);
-    }
-    return out;
-  };
-  const lite = (id: string) => /lite/.test(id);
-  return [...byRank(stable.filter((id) => !lite(id))), ...byRank(stable.filter(lite))].slice(0, max);
-}
+export { pickDefaultGeminiGradeModel, pickDefaultGeminiModel, pickFallbackModels } from "./geminiModels";

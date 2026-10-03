@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { ProviderId } from "./ai/types";
 import { DEFAULT_CLAUDE_MODEL } from "./ai/models";
+import { pickDefaultGeminiGradeModel } from "./ai/geminiModels";
 
 /** Wofür die KI genutzt wird: Material analysieren/Aufgaben erstellen oder Antworten bewerten. */
 export type Purpose = "create" | "grade";
@@ -11,7 +12,10 @@ export interface Settings {
   /** KI für die Bewertung offener Antworten (günstig pro Aufruf). */
   gradeProvider: ProviderId;
   geminiKey: string;
+  /** Gemini-Modell zum Erstellen (Analyse, Aufgaben). */
   geminiModel: string;
+  /** Gemini-Modell zum Bewerten; leer = wie geminiModel. Flash-Lite hat ein deutlich größeres Gratis-Kontingent. */
+  geminiGradeModel: string;
   /** Beim Verbinden geladene Modellliste (für Ausweichmodelle). */
   geminiModels: string[];
   claudeKey: string;
@@ -42,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gradeProvider: "gemini",
   geminiKey: "",
   geminiModel: "",
+  geminiGradeModel: "",
   geminiModels: [],
   claudeKey: "",
   claudeModel: DEFAULT_CLAUDE_MODEL,
@@ -78,6 +83,10 @@ export function getSettings(): Settings {
       stored.claudeMonthlyBudgetEur = stored.claudeMonthlyBudget;
     }
     delete stored.claudeMonthlyBudget;
+    // Ältere Version hatte ein Gemini-Modell für alles → zum Bewerten Flash-Lite (größeres Gratis-Kontingent).
+    if (stored.geminiGradeModel === undefined && stored.geminiModels?.length) {
+      stored.geminiGradeModel = pickDefaultGeminiGradeModel(stored.geminiModels) ?? "";
+    }
     cache = { ...DEFAULT_SETTINGS, ...stored };
   } catch {
     cache = { ...DEFAULT_SETTINGS };
@@ -117,6 +126,11 @@ export function providerFor(purpose: Purpose, s: Settings = getSettings()): Prov
 /** Ist die KI für diesen Zweck eingerichtet? */
 export function hasActiveKey(s: Settings = getSettings(), purpose: Purpose = "create"): boolean {
   return providerReady(providerFor(purpose, s), s);
+}
+
+/** Welches Gemini-Modell für diesen Zweck genutzt wird. */
+export function geminiModelFor(purpose: Purpose, s: Settings = getSettings()): string {
+  return purpose === "grade" ? s.geminiGradeModel || s.geminiModel : s.geminiModel;
 }
 
 export const PROVIDER_LABEL: Record<ProviderId, string> = { gemini: "Gemini", claude: "Claude" };

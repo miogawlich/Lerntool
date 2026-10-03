@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { formatEur, usdToEur } from "../currency";
-import { getSettings, providerFor, type Purpose } from "../settings";
+import { geminiModelFor, getSettings, providerFor, type Purpose } from "../settings";
 import { claudeCostUsd } from "./models";
 import type { CallOptions } from "./service";
 import { AIError, type LLMBackend, type ProviderId, type Usage } from "./types";
@@ -26,7 +26,7 @@ export async function assertClaudeBudget(): Promise<void> {
 }
 
 /** Lädt das SDK des Anbieters erst bei Bedarf (kleinerer Start-Download auf dem iPad). */
-export async function getBackendFor(provider: ProviderId): Promise<LLMBackend> {
+export async function getBackendFor(provider: ProviderId, purpose: Purpose = "create"): Promise<LLMBackend> {
   const s = getSettings();
   if (provider === "claude") {
     await assertClaudeBudget();
@@ -34,12 +34,13 @@ export async function getBackendFor(provider: ProviderId): Promise<LLMBackend> {
     return new ClaudeBackend(s.claudeKey, s.claudeModel);
   }
   const { GeminiBackend, pickFallbackModels } = await import("./gemini");
-  return new GeminiBackend(s.geminiKey, s.geminiModel, { fallbackModels: pickFallbackModels(s.geminiModels, s.geminiModel) });
+  const model = geminiModelFor(purpose, s);
+  return new GeminiBackend(s.geminiKey, model, { fallbackModels: pickFallbackModels(s.geminiModels, model) });
 }
 
 /** Backend für einen Zweck: „create“ (Analyse/Aufgaben) oder „grade“ (Bewertung). */
 export function getBackend(purpose: Purpose): Promise<LLMBackend> {
-  return getBackendFor(providerFor(purpose));
+  return getBackendFor(providerFor(purpose), purpose);
 }
 
 /** Sollen bei der Aufgabenerstellung die PDFs mitgeschickt werden? Bei Gemini (gratis) immer, bei Claude nur auf Wunsch. */

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { ApiError } from "@google/genai";
-import { GeminiBackend, mapGeminiError, pickDefaultGeminiModel, pickFallbackModels, resetGeminiState } from "../src/lib/ai/gemini";
+import { GeminiBackend, formatQuotaReset, mapGeminiError, nextQuotaReset, pickDefaultGeminiGradeModel, pickDefaultGeminiModel, pickFallbackModels, resetGeminiState } from "../src/lib/ai/gemini";
 import { AIError, type CompleteRequest } from "../src/lib/ai/types";
 import { analyzeDocuments, generateItems } from "../src/lib/ai/service";
 import { FakeBackend, sampleAnalysis } from "./helpers";
@@ -124,7 +124,20 @@ describe("Gemini: Wiederholversuche & Ausweichmodell", () => {
     const e = mapGeminiError(apiErr(429, 'Quota exceeded ... limit: 20, model: gemini-3.5-flash\nPlease retry in 32.5s. "quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"')) as AIError;
     expect(e.kind).toBe("rate_limit");
     expect(e.message).toMatch(/Tageslimit/);
+    expect(e.message).toMatch(/zurückgesetzt/);
     expect(e.retryAfterSeconds).toBeUndefined();
+  });
+
+  it("Tageskontingent: Zurücksetzen um Mitternacht pazifischer Zeit", () => {
+    // 3. Okt. 2026, 20:00 UTC = 13:00 PDT → Reset 4. Okt. 07:00 UTC
+    expect(nextQuotaReset(new Date("2026-10-03T20:00:00Z")).toISOString()).toBe("2026-10-04T07:00:00.000Z");
+    // 06:59 UTC = 23:59 PDT → Reset in einer Minute
+    expect(nextQuotaReset(new Date("2026-10-04T06:59:00Z")).toISOString()).toBe("2026-10-04T07:00:00.000Z");
+    // Winterzeit (PST, UTC−8)
+    expect(nextQuotaReset(new Date("2026-12-01T12:00:00Z")).toISOString()).toBe("2026-12-02T08:00:00.000Z");
+    const now = new Date(2026, 9, 3, 12, 0);
+    expect(formatQuotaReset(new Date(2026, 9, 4, 9, 0), now)).toBe("morgen um 09:00 Uhr");
+    expect(formatQuotaReset(new Date(2026, 9, 3, 18, 0), now)).toBe("heute um 18:00 Uhr");
   });
 
   it("Safaris „Load failed“ wird als Verbindungsabbruch mit Erklärung gemeldet", () => {
@@ -147,6 +160,10 @@ describe("Gemini: Wiederholversuche & Ausweichmodell", () => {
 describe("Modellwahl", () => {
   const ids = ["gemini-3.5-flash-preview", "gemini-3.0-flash", "gemini-3.0-pro", "gemini-3.0-flash-lite", "gemini-2.5-flash", "gemini-flash-latest"];
   const real = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"];
+  it("zum Bewerten: neuestes stabiles Flash-Lite, sonst wie beim Erstellen", () => {
+    expect(pickDefaultGeminiGradeModel(real)).toBe("gemini-3.5-flash-lite");
+    expect(pickDefaultGeminiGradeModel(["gemini-3.0-flash", "gemini-3.5-flash-lite-preview"])).toBe("gemini-3.0-flash");
+  });
   it("stabile Modelle vor Vorabversionen", () => {
     expect(pickDefaultGeminiModel(ids)).toBe("gemini-3.0-flash");
   });

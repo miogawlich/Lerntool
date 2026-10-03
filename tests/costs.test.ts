@@ -14,6 +14,13 @@ beforeEach(async () => {
 });
 
 describe("Anbieter pro Zweck", () => {
+  it("Gemini: eigenes Modell zum Bewerten, leer = wie Erstellen", async () => {
+    updateSettings({ geminiKey: "g", geminiModel: "gemini-3.8-flash", geminiGradeModel: "gemini-3.5-flash-lite" });
+    expect((await getBackendFor("gemini", "grade")).model).toBe("gemini-3.5-flash-lite");
+    expect((await getBackendFor("gemini", "create")).model).toBe("gemini-3.8-flash");
+    updateSettings({ geminiGradeModel: "" });
+    expect((await getBackendFor("gemini", "grade")).model).toBe("gemini-3.8-flash");
+  });
   it("wählt getrennt für Erstellen und Bewerten", () => {
     updateSettings({ createProvider: "gemini", gradeProvider: "claude", geminiKey: "g", geminiModel: "gemini-x", claudeKey: "" });
     expect(providerFor("create")).toBe("gemini");

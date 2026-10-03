@@ -45,7 +45,7 @@ export function SettingsPage() {
 
   const loadModels = () =>
     busy.run("Verbinde mit Gemini …", async () => {
-      const { listGeminiModels, pickDefaultGeminiModel } = await import("../lib/ai/gemini");
+      const { listGeminiModels, pickDefaultGeminiModel, pickDefaultGeminiGradeModel } = await import("../lib/ai/gemini");
       const list = await listGeminiModels(s.geminiKey.trim());
       setModels(list);
       if (!list.length) throw new Error("Keine passenden Gemini-Modelle gefunden.");
@@ -54,7 +54,12 @@ export function SettingsPage() {
       const best = pickDefaultGeminiModel(ids) ?? ids[0];
       // Vorabversionen (Preview) sind im Free Tier oft überlastet → auf stabiles Modell wechseln.
       const isPreview = /(preview|exp|latest)/.test(s.geminiModel);
-      updateSettings({ geminiModels: ids, geminiModel: keep && !isPreview ? s.geminiModel : best });
+      const keepGrade = ids.includes(s.geminiGradeModel) && !/(preview|exp|latest)/.test(s.geminiGradeModel);
+      updateSettings({
+        geminiModels: ids,
+        geminiModel: keep && !isPreview ? s.geminiModel : best,
+        geminiGradeModel: keepGrade ? s.geminiGradeModel : pickDefaultGeminiGradeModel(ids) ?? best,
+      });
       setMsg(`Verbunden – ${list.length} Modelle verfügbar.`);
     });
 
@@ -146,7 +151,7 @@ export function SettingsPage() {
         </div>
         {(models.length > 0 || s.geminiModel) && (
           <label className="field">
-            Modell
+            Modell zum Erstellen (Analyse, Aufgaben)
             <select value={s.geminiModel} onChange={(e) => updateSettings({ geminiModel: e.target.value })} data-testid="gemini-model">
               {!models.some((m) => m.id === s.geminiModel) && s.geminiModel && <option value={s.geminiModel}>{s.geminiModel}</option>}
               {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
@@ -154,7 +159,17 @@ export function SettingsPage() {
             {/(preview|exp|latest)/.test(s.geminiModel) && (
               <span className="notice warn small" data-testid="preview-warning">Das ist eine Vorabversion (Preview). Solche Modelle sind in der kostenlosen Stufe oft überlastet – besser ein stabiles „Flash“-Modell wählen.</span>
             )}
-            <span className="hint">Empfohlen: das neueste stabile „Flash“-Modell (großes kostenloses Kontingent). „Pro“-Modelle sind stärker, haben im Free Tier aber engere Limits.</span>
+            <span className="hint">Empfohlen: das neueste stabile „Flash“-Modell. Erstellen braucht wenige, große Anfragen – das knappe Tageskontingent reicht dafür meist. „Pro“-Modelle sind stärker, haben im Free Tier aber noch engere Limits.</span>
+          </label>
+        )}
+        {(models.length > 0 || s.geminiModel) && (
+          <label className="field">
+            Modell zum Bewerten
+            <select value={s.geminiGradeModel || s.geminiModel} onChange={(e) => updateSettings({ geminiGradeModel: e.target.value })} data-testid="gemini-grade-model">
+              {![...models.map((m) => m.id)].includes(s.geminiGradeModel || s.geminiModel) && <option value={s.geminiGradeModel || s.geminiModel}>{s.geminiGradeModel || s.geminiModel}</option>}
+              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+            <span className="hint">Empfohlen: das neueste „Flash-Lite“-Modell. Jede KI-Bewertung ist eine eigene Anfrage, und Flash-Lite hat im Free Tier ein um ein Vielfaches größeres Tageskontingent als Flash. Die Tageskontingente werden täglich um 9:00 Uhr (Mitternacht US-Westküste) zurückgesetzt.</span>
           </label>
         )}
         <p className="notice warn small">In der kostenlosen Stufe darf Google deine Eingaben (z. B. hochgeladene Folien) zur Verbesserung seiner Produkte verwenden. Es gelten Limits pro Minute und Tag.</p>
