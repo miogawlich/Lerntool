@@ -48,7 +48,7 @@ describe("Generierung", () => {
   const topics = sampleAnalysis.topics as any;
   it("teilt große Anfragen auf und ordnet Themen zu", async () => {
     const be = new FakeBackend([
-      JSON.stringify({ items: [item("Folgen und Grenzwerte", "flashcard", "F1")] }),
+      JSON.stringify({ items: [item("Folgen und Grenzwerte", "short_answer", "F1")] }),
       JSON.stringify({ items: [item("ableitungen", "worked_problem", "W1"), item("Unbekannt", "multiple_choice", "M1")] }),
     ]);
     const res = await generateItems(
@@ -68,7 +68,7 @@ describe("Generierung", () => {
     expect(be.requests[0].cacheDocuments).toBe(true);
   });
   it("assignTopics verwirft kaputte Items", () => {
-    const out = assignTopics([item("A", "multiple_choice", "x", { options: [] }) as any, item("A", "flashcard", "ok") as any], ["A"]);
+    const out = assignTopics([item("A", "multiple_choice", "x", { options: [] }) as any, item("A", "short_answer", "ok") as any], ["A"]);
     expect(out.map((i) => i.prompt)).toEqual(["ok"]);
   });
   it("mergeTopics ist case-insensitiv", () => {

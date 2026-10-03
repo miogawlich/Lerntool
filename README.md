@@ -6,7 +6,7 @@ KI-gestützte Lern-App fürs Studium, optimiert fürs iPad mit Apple Pencil. Sie
 
 - **Material hochladen:** Vorlesungsfolien und Altklausuren als PDF.
 - **KI-Analyse:** erkennt Themen, schätzt die Klausurrelevanz anhand der Altklausuren und schlägt einen passenden Aufgaben-Mix vor.
-- **Aufgaben:** Karteikarten, Multiple Choice, Kurzantworten sowie Rechen- und Freitextaufgaben im Stil der Altklausuren.
+- **Aufgaben:** Multiple Choice, Kurzantworten sowie Rechen- und Freitextaufgaben im Stil der Altklausuren.
 - **Antworten mit dem Stift:** Zeichenfeld mit fester Strichdicke (unabhängig vom Druck), Lasso zum Verschieben mehrerer Striche, Radierer, Rückgängig/Wiederholen. Die Handschrift wird von der KI gelesen und bewertet.
 - **Schwächen gezielt üben:** Wiederholungen werden mit FSRS geplant. Pro Thema gibt es einen Beherrschungswert und eine Auswertung der Fehlerarten. Außerdem erzeugt die KI neue Aufgaben, die gezielt deine Fehler trainieren.
 

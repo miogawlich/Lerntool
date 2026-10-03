@@ -32,11 +32,7 @@ test("Kompletter Ablauf: Einrichten, Upload, Analyse, Generierung, Lernen, Schw�
   for (let i = 0; i < 8; i++) {
     await expect(page.getByTestId("progress")).toHaveText(`${i + 1} / 8`);
     const type = await page.locator(".study-head .badge.accent").innerText();
-    if (type === "Karteikarte") {
-      await page.getByRole("button", { name: "Antwort zeigen" }).click();
-      if (i === 0) await shot(page, "04-karteikarte");
-      await page.getByRole("button", { name: /^Gut/ }).click();
-    } else if (type === "Multiple Choice") {
+    if (type === "Multiple Choice") {
       // Absichtlich falsch beim ersten Thema → Schwäche
       const wrong = i < 4;
       await page.getByTestId("mc-option").filter({ hasText: wrong ? "Falsche Aussage A" : "Richtige Aussage" }).click();

@@ -7,7 +7,7 @@ const DAY = 86_400_000;
 const topic = (id: string): Topic => ({ id, courseId: "c", name: id, summary: "", concepts: [], formulas: [], examRelevance: "hoch", examPatterns: "", order: 0 });
 const mkItem = (id: string, topicId: string, opts: Partial<Item> = {}): Item => {
   const card = newCard(new Date(0));
-  return { id, courseId: "c", topicId, createdAt: 0, source: "generated", type: "flashcard", difficulty: 1, prompt: id, answer: "x", options: [], rubric: [], card, due: card.due, ...opts };
+  return { id, courseId: "c", topicId, createdAt: 0, source: "generated", type: "short_answer", difficulty: 1, prompt: id, answer: "x", options: [], rubric: [], card, due: card.due, ...opts };
 };
 const att = (itemId: string, topicId: string, score: number, at: number): Attempt => ({ id: `${itemId}-${at}`, itemId, topicId, courseId: "c", at, score, mode: "auto" });
 

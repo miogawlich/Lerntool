@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AnalysisSchema, GenerationSchema, GradeSchema, extractJson, normalizeGrade, normalizeItem, normalizeMix, toStrictJsonSchema } from "../src/lib/schemas";
+import { AnalysisSchema, DEFAULT_MIX, GenerationSchema, GradeSchema, extractJson, normalizeGrade, normalizeItem, normalizeMix, toStrictJsonSchema } from "../src/lib/schemas";
 
 describe("toStrictJsonSchema", () => {
   it("macht alle Objekte strikt und entfernt nicht unterstützte Keywords", () => {
@@ -23,9 +23,14 @@ describe("toStrictJsonSchema", () => {
 
 describe("normalize", () => {
   it("normiert den Mix auf 100 %", () => {
-    const m = normalizeMix({ flashcard: 1, multiple_choice: 1, short_answer: 0, worked_problem: 2 });
-    expect(m).toEqual({ flashcard: 25, multiple_choice: 25, short_answer: 0, worked_problem: 50 });
-    expect(normalizeMix({ flashcard: 0, multiple_choice: 0, short_answer: 0, worked_problem: 0 }).flashcard).toBe(25);
+    const m = normalizeMix({ multiple_choice: 1, short_answer: 1, worked_problem: 2 });
+    expect(m).toEqual({ multiple_choice: 25, short_answer: 25, worked_problem: 50 });
+    expect(normalizeMix({ multiple_choice: 0, short_answer: 0, worked_problem: 0 })).toEqual(DEFAULT_MIX);
+  });
+  it("kennt keinen Fragetyp „Karteikarte“ mehr", () => {
+    const it = { topicName: "x", type: "flashcard", difficulty: 1, prompt: "p", answer: "a", options: [], rubric: [] };
+    expect(GenerationSchema.safeParse({ items: [it] }).success).toBe(false);
+    expect(JSON.stringify(toStrictJsonSchema(GenerationSchema))).not.toContain("flashcard");
   });
   it("verwirft MC ohne richtige Option und klemmt Schwierigkeit", () => {
     const base = { topicName: "x", prompt: "Frage", answer: "", rubric: [], difficulty: 7 };

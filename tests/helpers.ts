@@ -26,7 +26,7 @@ export class FakeBackend implements LLMBackend {
 
 export const sampleAnalysis = {
   subject: "Analysis I",
-  recommendedMix: { flashcard: 20, multiple_choice: 20, short_answer: 10, worked_problem: 50 },
+  recommendedMix: { multiple_choice: 20, short_answer: 30, worked_problem: 50 },
   mixReasoning: "Rechenlastiges Fach.",
   topics: [
     { name: "Folgen und Grenzwerte", summary: "Konvergenz von Folgen.", concepts: ["Konvergenz", "Cauchy-Folge"], formulas: ["$\\lim_{n\\to\\infty} a_n$"], examRelevance: "hoch", examPatterns: "Grenzwert berechnen" },

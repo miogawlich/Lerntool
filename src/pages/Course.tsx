@@ -9,7 +9,7 @@ import { claudeCostThisMonth, defaultCallOptions, getBackend, includePdfsForCrea
 import { estimateClaudeCost } from "../lib/ai/estimate";
 import { formatEur, formatUsdAsEur } from "../lib/currency";
 import { db, deleteCourse, type Course, type DocKind, type Item, type Topic } from "../lib/db";
-import { ERROR_TYPE_LABELS, ITEM_TYPE_LABELS, ITEM_TYPES, normalizeMix, type ErrorType, type FormatMix } from "../lib/schemas";
+import { DEFAULT_MIX, ERROR_TYPE_LABELS, ITEM_TYPE_LABELS, ITEM_TYPES, normalizeMix, type ErrorType, type FormatMix } from "../lib/schemas";
 import { computeMastery, errorTypeStats, weakestTopics, type TopicMastery } from "../lib/scheduler";
 import { getSettings, hasActiveKey, useSettings } from "../lib/settings";
 
@@ -249,7 +249,7 @@ function Material({ course, docs }: { course: Course; docs: { id: string; name: 
 }
 
 function MixEditor({ course }: { course: Course }) {
-  const mix = course.mix ?? { flashcard: 25, multiple_choice: 25, short_answer: 25, worked_problem: 25 };
+  const mix = course.mix ?? DEFAULT_MIX;
   const set = (k: keyof FormatMix, v: number) => db.courses.update(course.id, { mix: { ...mix, [k]: v } });
   const norm = normalizeMix(mix);
   return (
@@ -294,7 +294,7 @@ function Topics({ course, topics, items, mastery }: { course: Course; topics: To
     const requests = Math.max(1, Math.ceil(total / 24));
     if (!(await confirmClaudeCost(`${total} Aufgaben erzeugen`, await pdfPages(), total * 500 + 4_000 * requests, requests))) return;
     await busy.run("Erzeuge Aufgaben …", async ({ signal, progress }) => {
-      const mix = normalizeMix(course.mix ?? { flashcard: 25, multiple_choice: 25, short_answer: 25, worked_problem: 25 });
+      const mix = normalizeMix(course.mix ?? DEFAULT_MIX);
       const n = await generateForTopics(await getBackend("create"), course.id, ids, count, mix, {
         ...defaultCallOptions({ signal, onProgress: (p) => progress(p.step, p.receivedChars) }),
         includeDocs: includePdfsForCreate(),

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Rating, type Grade } from "ts-fsrs";
 import { ErrorBanner, useBusy } from "../components/Busy";
 import { Difficulty } from "../components/Bits";
 import { InkCanvas } from "../components/InkCanvas";
@@ -12,7 +11,7 @@ import { db, type Item, type Topic } from "../lib/db";
 import type { Stroke } from "../lib/ink";
 import { exportStrokesPng } from "../lib/inkRender";
 import { ERROR_TYPE_LABELS, ERROR_TYPES, ITEM_TYPE_LABELS, type ErrorType, type GradeResult } from "../lib/schemas";
-import { buildSession, formatInterval, previewIntervals, type SessionMode } from "../lib/scheduler";
+import { buildSession, type SessionMode } from "../lib/scheduler";
 import { getSettings, hasActiveKey, useSettings } from "../lib/settings";
 
 export function StudyPage() {
@@ -78,42 +77,9 @@ export function StudyPage() {
         <span className="small muted" data-testid="progress">{pos + 1} / {queue.length}</span>
       </div>
       <div className="bar" style={{ marginBottom: 16 }}><div style={{ width: `${(pos / queue.length) * 100}%`, background: "var(--accent)" }} /></div>
-      {item.type === "flashcard" && <Flashcard key={item.id} item={item} onDone={done} />}
       {item.type === "multiple_choice" && <MultipleChoice key={item.id} item={item} onDone={done} />}
       {(item.type === "short_answer" || item.type === "worked_problem") && <OpenAnswer key={item.id} item={item} onDone={done} />}
     </main>
-  );
-}
-
-function Flashcard({ item, onDone }: { item: Item; onDone: (s: number) => void }) {
-  const [shown, setShown] = useState(false);
-  const iv = useMemo(() => previewIntervals(item.card), [item]);
-  const rate = async (rating: Grade, score: number) => {
-    await recordAttempt(item, { score, mode: "self", rating });
-    onDone(score);
-  };
-  return (
-    <div className="stack">
-      <div className="card flash-card" onClick={() => setShown(true)} role="button" aria-label="Karte umdrehen">
-        <MathText className="prompt" text={item.prompt} />
-        {shown && (
-          <>
-            <hr style={{ width: "100%", border: 0, borderTop: "1px solid var(--border)", margin: "18px 0" }} />
-            <MathText text={item.answer} />
-          </>
-        )}
-      </div>
-      {!shown ? (
-        <button className="primary" onClick={() => setShown(true)} style={{ width: "100%" }}>Antwort zeigen</button>
-      ) : (
-        <div className="rating">
-          <button onClick={() => rate(Rating.Again, 0)}>Nochmal<small>{formatInterval(iv.again)}</small></button>
-          <button onClick={() => rate(Rating.Hard, 0.5)}>Schwer<small>{formatInterval(iv.hard)}</small></button>
-          <button className="primary" onClick={() => rate(Rating.Good, 0.85)}>Gut<small style={{ color: "inherit" }}>{formatInterval(iv.good)}</small></button>
-          <button onClick={() => rate(Rating.Easy, 1)}>Einfach<small>{formatInterval(iv.easy)}</small></button>
-        </div>
-      )}
-    </div>
   );
 }
 

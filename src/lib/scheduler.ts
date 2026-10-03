@@ -19,25 +19,6 @@ export function review(card: StoredCard, rating: Grade, now = new Date()): Store
   return cardToStored(f.next(storedToCard(card), now, rating).card);
 }
 
-/** Vorschau der Intervalle für die vier Bewertungsknöpfe (Karteikarten). */
-export function previewIntervals(card: StoredCard, now = new Date()): Record<"again" | "hard" | "good" | "easy", number> {
-  const p = f.repeat(storedToCard(card), now);
-  const ms = (g: Grade) => p[g].card.due.getTime() - now.getTime();
-  return { again: ms(Rating.Again), hard: ms(Rating.Hard), good: ms(Rating.Good), easy: ms(Rating.Easy) };
-}
-
-export function formatInterval(ms: number): string {
-  const min = ms / 60000;
-  if (min < 60) return `${Math.max(1, Math.round(min))} min`;
-  const h = min / 60;
-  if (h < 24) return `${Math.round(h)} h`;
-  const d = h / 24;
-  if (d < 31) return `${Math.round(d)} T`;
-  const mo = d / 30;
-  if (mo < 12) return `${Math.round(mo)} Mon`;
-  return `${(d / 365).toFixed(1)} J`;
-}
-
 export interface TopicMastery {
   topicId: string;
   /** 0–1, gleitender Mittelwert der Ergebnisse (neuere zählen stärker). */

@@ -53,7 +53,7 @@ describe("Monatsbudget", () => {
 
 describe("Sparmodus", () => {
   it("ohne Dokumente: keine PDFs, dafür Hinweis an das Modell", async () => {
-    const be = new FakeBackend([JSON.stringify({ items: [item("Ableitungen", "flashcard", "F")] })]);
+    const be = new FakeBackend([JSON.stringify({ items: [item("Ableitungen", "short_answer", "F")] })]);
     await generateItems(be, "Ana", [{ topic: sampleAnalysis.topics[1] as any, count: 1, existingPrompts: [] }], sampleAnalysis.recommendedMix, []);
     const parts = be.requests[0].parts;
     expect(parts.some((p) => p.type === "pdf")).toBe(false);

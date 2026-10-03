@@ -6,11 +6,10 @@ import { z } from "zod";
  * Werte werden nach dem Parsen geklemmt (siehe normalize* unten).
  */
 
-export const ITEM_TYPES = ["flashcard", "multiple_choice", "short_answer", "worked_problem"] as const;
+export const ITEM_TYPES = ["multiple_choice", "short_answer", "worked_problem"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
-  flashcard: "Karteikarte",
   multiple_choice: "Multiple Choice",
   short_answer: "Kurzantwort",
   worked_problem: "Rechen-/Freitextaufgabe",
@@ -32,12 +31,24 @@ export const ERROR_TYPE_LABELS: Record<ErrorType, string> = {
 };
 
 export const FormatMixSchema = z.object({
-  flashcard: z.number(),
   multiple_choice: z.number(),
   short_answer: z.number(),
   worked_problem: z.number(),
 });
 export type FormatMix = z.infer<typeof FormatMixSchema>;
+
+export const DEFAULT_MIX: FormatMix = { multiple_choice: 33, short_answer: 34, worked_problem: 33 };
+
+/** Altbestand mit Karteikarten-Anteil: Der Anteil geht in die Kurzantworten über. */
+export function migrateMix(mix: FormatMix & { flashcard?: number }): FormatMix {
+  const { flashcard, ...rest } = mix;
+  return flashcard ? { ...rest, short_answer: (rest.short_answer || 0) + flashcard } : rest;
+}
+
+/** Altbestand: Karteikarten werden zu Kurzantworten (Rückseite = Musterlösung). */
+export function migrateItem<T extends { type: string }>(item: T): T {
+  return (item.type as string) === "flashcard" ? { ...item, type: "short_answer" } : item;
+}
 
 export const TopicSchema = z.object({
   name: z.string(),
@@ -66,7 +77,6 @@ export type McOption = z.infer<typeof McOptionSchema>;
 
 /**
  * Flaches Item-Format, das für alle Typen funktioniert:
- * - flashcard: prompt = Vorderseite, answer = Rückseite
  * - multiple_choice: prompt = Frage, options = Antwortoptionen, answer = Gesamterklärung
  * - short_answer / worked_problem: prompt = Aufgabe, answer = Musterlösung, rubric = Bewertungsschema
  */
@@ -101,7 +111,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, N
 export function normalizeMix(mix: FormatMix): FormatMix {
   const vals = ITEM_TYPES.map((t) => Math.max(0, mix[t] || 0));
   const sum = vals.reduce((a, b) => a + b, 0);
-  if (sum <= 0) return { flashcard: 25, multiple_choice: 25, short_answer: 25, worked_problem: 25 };
+  if (sum <= 0) return { ...DEFAULT_MIX };
   const out = {} as FormatMix;
   ITEM_TYPES.forEach((t, i) => (out[t] = Math.round((vals[i] / sum) * 100)));
   return out;

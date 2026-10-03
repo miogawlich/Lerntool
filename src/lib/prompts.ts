@@ -8,7 +8,7 @@ Vorgehen:
 1. Erkenne das Fach und gliedere den Stoff in prüfungsrelevante Themen. Ein Thema ist so groß, dass man dazu 5–15 sinnvolle Aufgaben stellen kann (typisch 5–20 Themen pro Vorlesung). Keine Verwaltungsfolien (Organisatorisches, Literaturlisten) als Thema.
 2. Pro Thema: kurze Zusammenfassung (2–4 Sätze), die zentralen Konzepte/Begriffe, wichtige Formeln.
 3. Prüfungsrelevanz: Leite sie aus den Altklausuren ab (wie oft und mit welchem Gewicht kommt das Thema vor?). Beschreibe in examPatterns, wie das Thema in Klausuren typischerweise abgefragt wird (Aufgabentyp, typische Fragestellung, Punktgewicht). Wenn keine Altklausuren vorliegen, schätze die Relevanz und beginne examPatterns mit „(geschätzt)“.
-4. Empfiehl einen Aufgaben-Mix (Prozentwerte, Summe 100) aus: Karteikarte (flashcard), Multiple Choice (multiple_choice), Kurzantwort (short_answer), Rechen-/Freitextaufgabe mit handschriftlicher Lösung (worked_problem). Richte dich danach, was in diesem Fach und in den Klausuren tatsächlich verlangt wird: Rechenlastige Fächer brauchen viele worked_problem, Fächer mit viel Faktenwissen und Begriffen mehr Karteikarten. Begründe den Mix in mixReasoning in 1–2 Sätzen.
+4. Empfiehl einen Aufgaben-Mix (Prozentwerte, Summe 100) aus: Multiple Choice (multiple_choice), Kurzantwort (short_answer), Rechen-/Freitextaufgabe mit handschriftlicher Lösung (worked_problem). Richte dich danach, was in diesem Fach und in den Klausuren tatsächlich verlangt wird: Rechenlastige Fächer brauchen viele worked_problem, Fächer mit viel Faktenwissen und Begriffen mehr short_answer und multiple_choice. Begründe den Mix in mixReasoning in 1–2 Sätzen.
 
 Wenn bereits eine Themenliste existiert, gib die vollständige, aktualisierte Liste zurück: Behalte die Namen bestehender Themen exakt bei, wenn es dasselbe Thema ist, ergänze neue Themen und aktualisiere Prüfungsrelevanz und Muster anhand des neuen Materials.
 
@@ -33,11 +33,10 @@ Regeln für alle Aufgaben:
 - ${MATH_RULES}
 
 Je Typ:
-- flashcard: prompt = Vorderseite (Begriff oder präzise Frage), answer = Rückseite (knapp, ein Fakt bzw. eine Definition). options = [], rubric = [].
 - multiple_choice: prompt = Frage, options = genau 4 Optionen mit mind. einer richtigen; Distraktoren basieren auf typischen Fehlvorstellungen; jede Option mit kurzer explanation, warum sie richtig/falsch ist. answer = kurze Gesamterklärung. rubric = [].
 - short_answer: Frage, die sich in 1–4 Sätzen beantworten lässt. answer = Musterantwort. rubric = 2–4 Kriterien, die eine vollständige Antwort enthalten muss.
 - worked_problem: Aufgabe, die man auf Papier bzw. mit dem Stift löst (Rechnung, Herleitung, Skizze, Beweis oder ausführliche Erklärung), mit konkreten Zahlenwerten, wo sinnvoll. answer = vollständige Musterlösung mit allen Zwischenschritten. rubric = 3–6 Bewertungskriterien (Teilschritte) in der Reihenfolge der Lösung.
-Bei Typen ohne Optionen ist options = []. Bei flashcard und multiple_choice ist rubric = [].`;
+Bei Typen ohne Optionen ist options = []. Bei multiple_choice ist rubric = [].`;
 
 export interface GenerateTopicSpec {
   topic: TopicData;

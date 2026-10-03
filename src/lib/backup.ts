@@ -1,3 +1,4 @@
+import { migrateItem, migrateMix, type FormatMix } from "./schemas";
 import { base64ToBlob, blobToBase64, db as defaultDb, type LernDB } from "./db";
 
 const VERSION = 1;
@@ -39,10 +40,10 @@ export async function importAll(json: string, database: LernDB = defaultDb) {
     "rw",
     [database.courses, database.documents, database.topics, database.items, database.attempts, database.usage],
     async () => {
-      await database.courses.bulkPut(data.courses ?? []);
+      await database.courses.bulkPut((data.courses ?? []).map((c: { mix?: FormatMix }) => (c.mix ? { ...c, mix: migrateMix(c.mix) } : c)));
       await database.documents.bulkPut(documents);
       await database.topics.bulkPut(data.topics ?? []);
-      await database.items.bulkPut(data.items ?? []);
+      await database.items.bulkPut((data.items ?? []).map(migrateItem));
       await database.attempts.bulkPut(attempts);
       await database.usage.bulkPut(data.usage ?? []);
     },

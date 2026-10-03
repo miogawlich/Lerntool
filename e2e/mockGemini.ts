@@ -10,7 +10,7 @@ const json = (route: Route, body: unknown, status = 200) =>
 
 export const ANALYSIS = {
   subject: "Analysis I",
-  recommendedMix: { flashcard: 25, multiple_choice: 25, short_answer: 20, worked_problem: 30 },
+  recommendedMix: { multiple_choice: 25, short_answer: 45, worked_problem: 30 },
   mixReasoning: "Viel Rechnen, aber auch Begriffe.",
   topics: [
     { name: "Folgen und Grenzwerte", summary: "Konvergenz von Folgen, $\\varepsilon$-Kriterium.", concepts: ["Konvergenz", "Cauchy-Folge"], formulas: ["$\\lim_{n\\to\\infty} \\frac{1}{n} = 0$"], examRelevance: "hoch", examPatterns: "Grenzwert berechnen (10 P.)" },
@@ -20,7 +20,7 @@ export const ANALYSIS = {
 
 function itemsFor(topic: string) {
   return [
-    { topicName: topic, type: "flashcard", difficulty: 1, prompt: `Was besagt die Definition zu ${topic}?`, answer: "Eine knappe Definition.", options: [], rubric: [] },
+    { topicName: topic, type: "short_answer", difficulty: 1, prompt: `Was besagt die Definition zu ${topic}?`, answer: "Eine knappe Definition.", options: [], rubric: ["Definition genannt"] },
     {
       topicName: topic, type: "multiple_choice", difficulty: 2, prompt: `Welche Aussage zu ${topic} ist richtig?`, answer: "Erklärung.",
       options: [

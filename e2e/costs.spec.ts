@@ -26,8 +26,7 @@ test("Erstellen mit Gemini, Bewerten mit Claude, Budgetsperre", async ({ page })
     await expect(page.getByTestId("progress")).toHaveText(`${i + 1} / 8`);
     if ((await page.locator(".study-head .badge.accent").innerText()) === "Rechen-/Freitextaufgabe") break;
     const t = await page.locator(".study-head .badge.accent").innerText();
-    if (t === "Karteikarte") { await page.getByRole("button", { name: "Antwort zeigen" }).click(); await page.getByRole("button", { name: /^Gut/ }).click(); }
-    else if (t === "Multiple Choice") { await page.getByTestId("mc-option").first().click(); await page.getByRole("button", { name: "Prüfen" }).click(); await page.getByRole("button", { name: "Weiter" }).click(); }
+    if (t === "Multiple Choice") { await page.getByTestId("mc-option").first().click(); await page.getByRole("button", { name: "Prüfen" }).click(); await page.getByRole("button", { name: "Weiter" }).click(); }
     else { await page.getByTestId("self-grade").click(); await page.getByRole("button", { name: /Speichern/ }).click(); }
   }
   await drawStroke(page, line(40, 60, 240, 60));

@@ -13,8 +13,7 @@ async function openCanvas(page: Page) {
     if ((await page.locator(".study-head .badge.accent").innerText()) === "Rechen-/Freitextaufgabe") break;
     // Andere Typen schnell überspringen
     const t = await page.locator(".study-head .badge.accent").innerText();
-    if (t === "Karteikarte") { await page.getByRole("button", { name: "Antwort zeigen" }).click(); await page.getByRole("button", { name: /^Gut/ }).click(); }
-    else if (t === "Multiple Choice") { await page.getByTestId("mc-option").first().click(); await page.getByRole("button", { name: "Prüfen" }).click(); await page.getByRole("button", { name: "Weiter" }).click(); }
+    if (t === "Multiple Choice") { await page.getByTestId("mc-option").first().click(); await page.getByRole("button", { name: "Prüfen" }).click(); await page.getByRole("button", { name: "Weiter" }).click(); }
     else { await page.getByTestId("self-grade").click(); await page.getByRole("button", { name: /Speichern/ }).click(); }
   }
   await expect(page.getByTestId("ink-canvas")).toBeVisible();

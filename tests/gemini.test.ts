@@ -207,13 +207,13 @@ describe("Kleine Requests für Gemini (Safari-Zeitlimit)", () => {
 
   it("Erstellen: höchstens maxItemsPerRequest Aufgaben pro Request, ohne Wiederholungen zwischen den Teilen", async () => {
     const topic = { ...sampleAnalysis.topics[0], examRelevance: "hoch" as const };
-    const item = (p: string) => ({ topicName: topic.name, type: "flashcard", difficulty: 1, prompt: p, answer: "a", options: [], rubric: [] });
+    const item = (p: string) => ({ topicName: topic.name, type: "short_answer", difficulty: 1, prompt: p, answer: "a", options: [], rubric: [] });
     const be = Object.assign(
       new FakeBackend([JSON.stringify({ items: [item("Frage A")] }), JSON.stringify({ items: [item("Frage B")] })]),
       { maxItemsPerRequest: 8, batchBytes: 1024 * 1024 },
     );
     const docs = [doc("klausur.pdf", 700, "exam"), doc("folien.pdf", 700)];
-    const mix = { flashcard: 100, multiple_choice: 0, short_answer: 0, worked_problem: 0 };
+    const mix = { multiple_choice: 0, short_answer: 100, worked_problem: 0 };
     const out = await generateItems(be, "K", [{ topic, count: 12, existingPrompts: [] }], mix, docs);
     expect(out).toHaveLength(2);
     expect(be.requests).toHaveLength(2);

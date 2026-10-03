@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { Card } from "ts-fsrs";
-import type { ErrorType, ExamRelevance, FormatMix, GeneratedItem } from "./schemas";
+import { migrateItem, migrateMix, type ErrorType, type ExamRelevance, type FormatMix, type GeneratedItem } from "./schemas";
 
 export interface Course {
   id: string;
@@ -111,6 +111,13 @@ export class LernDB extends Dexie {
       items: "id, courseId, topicId, due, [courseId+due]",
       attempts: "id, itemId, topicId, courseId, at",
       usage: "++id, at",
+    });
+    // v2: Fragetyp „Karteikarte“ entfällt → Kurzantwort, Mix-Anteil geht in Kurzantwort über.
+    this.version(2).upgrade(async (tx) => {
+      await tx.table("items").toCollection().modify((i: Item) => Object.assign(i, migrateItem(i)));
+      await tx.table("courses").toCollection().modify((c: Course) => {
+        if (c.mix) c.mix = migrateMix(c.mix);
+      });
     });
   }
 }

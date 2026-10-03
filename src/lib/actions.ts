@@ -1,9 +1,8 @@
-import type { Grade } from "ts-fsrs";
 import { estimatePdfPages } from "./ai/estimate";
 import { analyzeDocuments, generateItems, generateVariations, type CallOptions, type DocInput } from "./ai/service";
 import type { LLMBackend } from "./ai/types";
 import { blobToBase64, db as defaultDb, newId, type Attempt, type DocKind, type Item, type LernDB, type Topic } from "./db";
-import type { ErrorType, FormatMix, GeneratedItem, TopicData } from "./schemas";
+import { DEFAULT_MIX, type ErrorType, type FormatMix, type GeneratedItem, type TopicData } from "./schemas";
 import { newCard, review, scoreToRating } from "./scheduler";
 
 export async function createCourse(name: string, database: LernDB = defaultDb): Promise<string> {
@@ -150,7 +149,7 @@ export async function generateWeaknessVariations(
     });
   if (!sources.length) {
     // Noch keine Fehler: allgemeine Übungsaufgaben zum Thema
-    const mix = course.mix ?? { flashcard: 25, multiple_choice: 25, short_answer: 25, worked_problem: 25 };
+    const mix = course.mix ?? DEFAULT_MIX;
     return generateForTopics(backend, courseId, [topicId], count, mix, opts, database);
   }
   const docs = opts.includeDocs === false ? [] : await docInputs(courseId, database);
@@ -163,8 +162,6 @@ export async function generateWeaknessVariations(
 export interface AttemptInput {
   score: number;
   mode: Attempt["mode"];
-  /** Für Karteikarten: direkte FSRS-Bewertung statt aus dem Score abgeleitet. */
-  rating?: Grade;
   errorType?: ErrorType;
   feedback?: string;
   missedConcepts?: string[];
@@ -174,9 +171,8 @@ export interface AttemptInput {
 }
 
 export async function recordAttempt(item: Item, input: AttemptInput, database: LernDB = defaultDb): Promise<Item> {
-  const { rating, ...rest } = input;
   const now = new Date();
-  const card = review(item.card, rating ?? scoreToRating(input.score), now);
+  const card = review(item.card, scoreToRating(input.score), now);
   const updated: Item = { ...item, card, due: card.due };
   await database.transaction("rw", [database.items, database.attempts], async () => {
     await database.attempts.add({
@@ -185,7 +181,7 @@ export async function recordAttempt(item: Item, input: AttemptInput, database: L
       topicId: item.topicId,
       courseId: item.courseId,
       at: now.getTime(),
-      ...rest,
+      ...input,
     });
     await database.items.put(updated);
   });
